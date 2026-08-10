@@ -3,6 +3,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import json
 from enum import Enum
+from time import perf_counter
 import numpy as np
 from loguru import logger
 
@@ -69,6 +70,7 @@ class WebSocketHandler:
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
         self.default_context_cache = default_context_cache
         self.received_data_buffers: Dict[str, np.ndarray] = {}
+        self.conversation_started_at: Dict[str, tuple[float, str]] = {}
 
         # Message handlers mapping
         self._message_handlers = self._init_message_handlers()
@@ -301,6 +303,7 @@ class WebSocketHandler:
         self.client_connections.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
+        self.conversation_started_at.pop(client_uid, None)
         if client_uid in self.current_conversation_tasks:
             task = self.current_conversation_tasks[client_uid]
             if task and not task.done():
@@ -320,6 +323,7 @@ class WebSocketHandler:
         self.client_connections.pop(client_uid, None)
         self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
+        self.conversation_started_at.pop(client_uid, None)
         self.chat_group_manager.client_group_map.pop(client_uid, None)
 
         if client_uid in self.current_conversation_tasks:
@@ -370,6 +374,7 @@ class WebSocketHandler:
         self, websocket: WebSocket, client_uid: str, data: WSMessage
     ) -> None:
         """Handle conversation interruption"""
+        self.conversation_started_at.pop(client_uid, None)
         heard_response = data.get("text", "")
         context = self.client_contexts[client_uid]
         group = self.chat_group_manager.get_client_group(client_uid)
@@ -514,8 +519,10 @@ class WebSocketHandler:
         self, websocket: WebSocket, client_uid: str, data: WSMessage
     ) -> None:
         """Handle triggers that start a conversation"""
+        input_type = data.get("type", "unknown")
+        self.conversation_started_at[client_uid] = (perf_counter(), input_type)
         await handle_conversation_trigger(
-            msg_type=data.get("type", ""),
+            msg_type=input_type,
             data=data,
             client_uid=client_uid,
             context=self.client_contexts[client_uid],
@@ -562,6 +569,15 @@ class WebSocketHandler:
         """
         Handle audio playback start notification
         """
+        timing = self.conversation_started_at.pop(client_uid, None)
+        if timing is not None:
+            started_at, input_type = timing
+            duration_ms = (perf_counter() - started_at) * 1000
+            logger.info(
+                f"[PERF] stage=first_audio_playback duration_ms={duration_ms:.1f} "
+                f"input_type={input_type}"
+            )
+
         group_members = self.chat_group_manager.get_group_members(client_uid)
         if len(group_members) > 1:
             display_text = data.get("display_text")

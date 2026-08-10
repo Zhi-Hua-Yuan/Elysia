@@ -3,6 +3,7 @@ import json
 import re
 import uuid
 from datetime import datetime
+from time import perf_counter
 from typing import List, Optional, Dict
 from loguru import logger
 
@@ -26,6 +27,12 @@ class TTSTaskManager:
         # Counter for maintaining order
         self._sequence_counter = 0
         self._next_sequence_to_send = 0
+        self._llm_started_at: Optional[float] = None
+        self._first_tts_queued = False
+
+    def mark_llm_started(self) -> None:
+        """Mark the start of LLM processing for first-sentence latency logging."""
+        self._llm_started_at = perf_counter()
 
     async def speak(
         self,
@@ -62,9 +69,15 @@ class TTSTaskManager:
             await self._send_silent_payload(display_text, actions, current_sequence)
             return
 
-        logger.debug(
-            f"🏃Queuing TTS task for: '''{tts_text}''' (by {display_text.name})"
-        )
+        logger.debug("🏃 Queuing TTS task (text_chars={})", len(tts_text))
+
+        if not self._first_tts_queued:
+            self._first_tts_queued = True
+            if self._llm_started_at is not None:
+                duration_ms = (perf_counter() - self._llm_started_at) * 1000
+                logger.info(
+                    f"[PERF] stage=llm_first_sentence duration_ms={duration_ms:.1f}"
+                )
 
         # Get current sequence number
         current_sequence = self._sequence_counter
@@ -138,12 +151,21 @@ class TTSTaskManager:
     ) -> None:
         """Process TTS generation and queue the result for ordered delivery"""
         audio_file_path = None
+        started_at = perf_counter()
         try:
             audio_file_path = await self._generate_audio(tts_engine, tts_text)
+            audio_ready_at = perf_counter()
             payload = prepare_audio_payload(
                 audio_path=audio_file_path,
                 display_text=display_text,
                 actions=actions,
+            )
+            payload_ready_at = perf_counter()
+            logger.info(
+                f"[PERF] stage=tts sequence={sequence_number} "
+                f"synthesis_ms={(audio_ready_at - started_at) * 1000:.1f} "
+                f"payload_ms={(payload_ready_at - audio_ready_at) * 1000:.1f} "
+                f"total_ms={(payload_ready_at - started_at) * 1000:.1f}"
             )
             # Queue the payload with its sequence number
             await self._payload_queue.put((payload, sequence_number))
@@ -165,7 +187,7 @@ class TTSTaskManager:
 
     async def _generate_audio(self, tts_engine: TTSInterface, text: str) -> str:
         """Generate audio file from text"""
-        logger.debug(f"🏃Generating audio for '''{text}'''...")
+        logger.debug("🏃 Generating audio (text_chars={})", len(text))
         return await tts_engine.async_generate_audio(
             text=text,
             file_name_no_ext=f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{str(uuid.uuid4())[:8]}",
@@ -178,5 +200,7 @@ class TTSTaskManager:
             self._sender_task.cancel()
         self._sequence_counter = 0
         self._next_sequence_to_send = 0
+        self._llm_started_at = None
+        self._first_tts_queued = False
         # Create a new queue to clear any pending items
         self._payload_queue = asyncio.Queue()

@@ -81,12 +81,15 @@ async def process_single_conversation(
         if skip_history:
             logger.debug("Skipping storing user input to history (proactive speak)")
 
-        logger.info(f"User input: {input_text}")
-        if images:
-            logger.info(f"With {len(images)} images")
+        logger.info(
+            "User input received: text_chars={} images={}",
+            len(input_text),
+            len(images) if images else 0,
+        )
 
         try:
             # agent.chat yields Union[SentenceOutput, Dict[str, Any]]
+            tts_manager.mark_llm_started()
             agent_output_stream = context.agent_engine.chat(batch_input)
 
             async for output_item in agent_output_stream:
@@ -96,7 +99,11 @@ async def process_single_conversation(
                 ):
                     # Handle tool status event: send WebSocket message
                     output_item["name"] = context.character_config.character_name
-                    logger.debug(f"Sending tool status update: {output_item}")
+                    logger.debug(
+                        "Sending tool status update: type={} status={}",
+                        output_item.get("type"),
+                        output_item.get("status"),
+                    )
 
                     await websocket_send(json.dumps(output_item))
 
@@ -120,7 +127,7 @@ async def process_single_conversation(
                     logger.warning(
                         f"Received unexpected item type from agent chat stream: {type(output_item)}"
                     )
-                    logger.debug(f"Unexpected item content: {output_item}")
+                    logger.debug("Unexpected item content omitted from logs")
 
         except Exception as e:
             logger.exception(
@@ -157,7 +164,7 @@ async def process_single_conversation(
                 name=context.character_config.character_name,
                 avatar=context.character_config.avatar,
             )
-            logger.info(f"AI response: {full_response}")
+            logger.info("AI response completed: text_chars={}", len(full_response))
 
         return full_response  # Return accumulated full_response
 

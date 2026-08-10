@@ -1,5 +1,6 @@
 import asyncio
 import re
+from time import perf_counter
 from typing import Optional, Union, Any, List, Dict
 import numpy as np
 import json
@@ -92,12 +93,12 @@ async def handle_sentence_output(
     """Handle sentence output type with optional translation support"""
     full_response = ""
     async for display_text, tts_text, actions in output:
-        logger.debug(f"🏃 Processing output: '''{tts_text}'''...")
+        logger.debug("🏃 Processing output (tts_chars={})", len(tts_text))
 
         if translate_engine:
             if len(re.sub(r'[\s.,!?，。！？\'"』」）】\s]+', "", tts_text)):
                 tts_text = translate_engine.translate(tts_text)
-            logger.info(f"🏃 Text after translation: '''{tts_text}'''...")
+            logger.info("🏃 Text translated (tts_chars={})", len(tts_text))
         else:
             logger.debug("🚫 No translation engine available. Skipping translation.")
 
@@ -151,7 +152,13 @@ async def process_user_input(
     """Process user input, converting audio to text if needed"""
     if isinstance(user_input, np.ndarray):
         logger.info("Transcribing audio input...")
+        started_at = perf_counter()
         input_text = await asr_engine.async_transcribe_np(user_input)
+        duration_ms = (perf_counter() - started_at) * 1000
+        logger.info(
+            f"[PERF] stage=asr duration_ms={duration_ms:.1f} "
+            f"audio_samples={user_input.size}"
+        )
         await websocket_send(
             json.dumps({"type": "user-input-transcription", "text": input_text})
         )

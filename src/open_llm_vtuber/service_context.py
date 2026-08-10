@@ -244,7 +244,7 @@ class ServiceContext:
             self.character_config.agent_config.agent_settings.basic_memory_agent.mcp_enabled_servers,
         )
 
-        logger.debug(f"Loaded service context with cache: {character_config}")
+        logger.debug("Loaded service context from cached configuration")
 
     async def load_from_config(self, config: Config) -> None:
         """
@@ -394,7 +394,7 @@ class ServiceContext:
             )
 
             logger.debug(f"Agent choice: {agent_config.conversation_agent_choice}")
-            logger.debug(f"System prompt: {system_prompt}")
+            logger.debug("System prompt constructed (chars={})", len(system_prompt))
 
             # Save the current configuration
             self.character_config.agent_config = agent_config
@@ -443,7 +443,7 @@ class ServiceContext:
         Returns:
         - str: The system prompt with all tool prompts appended.
         """
-        logger.debug(f"constructing persona_prompt: '''{persona_prompt}'''")
+        logger.debug("Constructing persona prompt (chars={})", len(persona_prompt))
 
         for prompt_name, prompt_file in self.system_config.tool_prompts.items():
             if (
@@ -464,8 +464,7 @@ class ServiceContext:
 
             persona_prompt += prompt_content
 
-        logger.debug("\n === System Prompt ===")
-        logger.debug(persona_prompt)
+        logger.debug("Final system prompt ready (chars={})", len(persona_prompt))
 
         return persona_prompt
 

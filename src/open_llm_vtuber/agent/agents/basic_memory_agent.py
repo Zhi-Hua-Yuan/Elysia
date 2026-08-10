@@ -118,7 +118,7 @@ class BasicMemoryAgent(AgentInterface):
 
     def set_system(self, system: str):
         """Set the system prompt."""
-        logger.debug(f"Memory Agent: Setting system prompt: '''{system}'''")
+        logger.debug("Memory Agent: setting system prompt (chars={})", len(system))
 
         if self.interrupt_method == "user":
             system = f"{system}\n\nIf you received `[interrupted by user]` signal, you were interrupted."

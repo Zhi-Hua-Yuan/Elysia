@@ -21,6 +21,96 @@ from .stateless_llm_interface import StatelessLLMInterface
 from ...mcpp.types import ToolCallObject
 
 
+def _summarize_messages(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Return request diagnostics without retaining message content."""
+    role_counts: Dict[str, int] = {}
+    text_chars = 0
+    image_count = 0
+    other_content_parts = 0
+
+    for message in messages:
+        role = str(message.get("role", "unknown"))
+        role_counts[role] = role_counts.get(role, 0) + 1
+        content = message.get("content")
+
+        if isinstance(content, str):
+            text_chars += len(content)
+            continue
+
+        if not isinstance(content, list):
+            if content is not None:
+                other_content_parts += 1
+            continue
+
+        for part in content:
+            if isinstance(part, str):
+                text_chars += len(part)
+                continue
+            if not isinstance(part, dict):
+                other_content_parts += 1
+                continue
+
+            part_type = part.get("type")
+            if part_type in {"text", "input_text"}:
+                text = part.get("text")
+                if isinstance(text, str):
+                    text_chars += len(text)
+                else:
+                    other_content_parts += 1
+            elif part_type in {"image", "image_url", "input_image"}:
+                image_count += 1
+            else:
+                other_content_parts += 1
+
+    return {
+        "message_count": len(messages),
+        "role_counts": role_counts,
+        "text_chars": text_chars,
+        "image_count": image_count,
+        "other_content_parts": other_content_parts,
+    }
+
+
+def _summarize_tool_calls(tool_calls: Dict[int, Dict[str, Any]]) -> Dict[str, Any]:
+    """Return tool-call diagnostics without logging argument values."""
+    tool_names = []
+    for tool_call in tool_calls.values():
+        function = tool_call.get("function")
+        if isinstance(function, dict):
+            name = function.get("name")
+            if isinstance(name, str) and name:
+                tool_names.append(name)
+    return {"count": len(tool_calls), "names": sorted(set(tool_names))}
+
+
+def _log_request_summary(
+    messages: List[Dict[str, Any]], model: str, temperature: float, level: str
+) -> None:
+    summary = _summarize_messages(messages)
+    logger.log(
+        level,
+        "LLM request summary: model={} messages={} roles={} text_chars={} "
+        "images={} other_content_parts={} temperature={}",
+        model,
+        summary["message_count"],
+        summary["role_counts"],
+        summary["text_chars"],
+        summary["image_count"],
+        summary["other_content_parts"],
+        temperature,
+    )
+
+
+def _log_api_error(error: APIError) -> None:
+    """Log API error metadata without provider response or request bodies."""
+    logger.error(
+        "LLM API error: error_type={} status_code={} request_id={}",
+        type(error).__name__,
+        getattr(error, "status_code", None),
+        getattr(error, "request_id", None),
+    )
+
+
 class AsyncLLM(StatelessLLMInterface):
     def __init__(
         self,
@@ -53,9 +143,7 @@ class AsyncLLM(StatelessLLMInterface):
         )
         self.support_tools = True
 
-        logger.info(
-            f"Initialized AsyncLLM with the parameters: {self.base_url}, {self.model}"
-        )
+        logger.info("Initialized AsyncLLM with model={}", self.model)
 
     async def chat_completion(
         self,
@@ -93,7 +181,9 @@ class AsyncLLM(StatelessLLMInterface):
                     {"role": "system", "content": system},
                     *messages,
                 ]
-            logger.debug(f"Messages: {messages_with_system}")
+            _log_request_summary(
+                messages_with_system, self.model, self.temperature, "DEBUG"
+            )
 
             available_tools = tools if self.support_tools else NOT_GIVEN
 
@@ -106,8 +196,13 @@ class AsyncLLM(StatelessLLMInterface):
                 temperature=self.temperature,
                 tools=available_tools,
             )
+            available_tool_count = (
+                len(available_tools) if isinstance(available_tools, list) else 0
+            )
             logger.debug(
-                f"Tool Support: {self.support_tools}, Available tools: {available_tools}"
+                "Tool support: {}, available_tool_count={}",
+                self.support_tools,
+                available_tool_count,
             )
 
             async for chunk in stream:
@@ -119,7 +214,8 @@ class AsyncLLM(StatelessLLMInterface):
 
                     if has_tool_calls:
                         logger.debug(
-                            f"Tool calls detected in chunk: {chunk.choices[0].delta.tool_calls}"
+                            "Tool calls detected in chunk: count={}",
+                            len(chunk.choices[0].delta.tool_calls),
                         )
                         in_tool_call = True
                         # Process tool calls in the current chunk
@@ -166,7 +262,10 @@ class AsyncLLM(StatelessLLMInterface):
                     elif in_tool_call and not has_tool_calls:
                         in_tool_call = False
                         # Convert accumulated tool calls to the required format and output
-                        logger.info(f"Complete tool calls: {accumulated_tool_calls}")
+                        logger.info(
+                            "Complete tool calls: {}",
+                            _summarize_tool_calls(accumulated_tool_calls),
+                        )
 
                         # Use the from_dict method to create a ToolCallObject instance from a dictionary
                         complete_tool_calls = [
@@ -187,7 +286,10 @@ class AsyncLLM(StatelessLLMInterface):
 
             # If stream ends while still in a tool call, make sure to yield the tool call
             if in_tool_call and accumulated_tool_calls:
-                logger.info(f"Final tool call at stream end: {accumulated_tool_calls}")
+                logger.info(
+                    "Final tool call at stream end: {}",
+                    _summarize_tool_calls(accumulated_tool_calls),
+                )
 
                 # Create a ToolCallObject instance from a dictionary using the from_dict method.
                 complete_tool_calls = [
@@ -199,14 +301,15 @@ class AsyncLLM(StatelessLLMInterface):
 
         except APIConnectionError as e:
             logger.error(
-                f"Error calling the chat endpoint: Connection error. Failed to connect to the LLM API. \nCheck the configurations and the reachability of the LLM backend. \nSee the logs for details. \nTroubleshooting with documentation: https://open-llm-vtuber.github.io/docs/faq#%E9%81%87%E5%88%B0-error-calling-the-chat-endpoint-%E9%94%99%E8%AF%AF%E6%80%8E%E4%B9%88%E5%8A%9E \n{e.__cause__}"
+                "Error calling the chat endpoint: connection error. "
+                "error_type={} cause_type={}",
+                type(e).__name__,
+                type(e.__cause__).__name__ if e.__cause__ else None,
             )
             yield "Error calling the chat endpoint: Connection error. Failed to connect to the LLM API. Check the configurations and the reachability of the LLM backend. See the logs for details. Troubleshooting with documentation: [https://open-llm-vtuber.github.io/docs/faq#%E9%81%87%E5%88%B0-error-calling-the-chat-endpoint-%E9%94%99%E8%AF%AF%E6%80%8E%E4%B9%88%E5%8A%9E]"
 
         except RateLimitError as e:
-            logger.error(
-                f"Error calling the chat endpoint: Rate limit exceeded: {e.response}"
-            )
+            _log_api_error(e)
             yield "Error calling the chat endpoint: Rate limit exceeded. Please try again later. See the logs for details."
 
         except APIError as e:
@@ -217,11 +320,10 @@ class AsyncLLM(StatelessLLMInterface):
                 )
                 yield "__API_NOT_SUPPORT_TOOLS__"
                 return
-            logger.error(f"LLM API: Error occurred: {e}")
-            logger.info(f"Base URL: {self.base_url}")
-            logger.info(f"Model: {self.model}")
-            logger.info(f"Messages: {messages}")
-            logger.info(f"temperature: {self.temperature}")
+            _log_api_error(e)
+            _log_request_summary(
+                messages_with_system, self.model, self.temperature, "INFO"
+            )
             yield "Error calling the chat endpoint: Error occurred while generating response. See the logs for details."
 
         finally:
