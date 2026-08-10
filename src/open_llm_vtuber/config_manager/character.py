@@ -19,6 +19,7 @@ class CharacterConfig(I18nMixin):
     character_name: str = Field(default="", alias="character_name")
     human_name: str = Field(default="Human", alias="human_name")
     avatar: str = Field(default="", alias="avatar")
+    enable_vision_input: bool = Field(default=True, alias="enable_vision_input")
     persona_prompt: str = Field(..., alias="persona_prompt")
     agent_config: AgentConfig = Field(..., alias="agent_config")
     asr_config: ASRConfig = Field(..., alias="asr_config")
@@ -66,6 +67,10 @@ class CharacterConfig(I18nMixin):
         ),
         "avatar": Description(
             en="Avatar image path for the character", zh="角色头像图片路径"
+        ),
+        "enable_vision_input": Description(
+            en="Whether camera and screen images may be sent to the conversation agent",
+            zh="是否允许将摄像头和屏幕图像发送给对话代理",
         ),
     }
 

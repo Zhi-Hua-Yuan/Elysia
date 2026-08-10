@@ -1,6 +1,6 @@
 import asyncio
 import json
-from typing import Dict, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
 from fastapi import WebSocket
@@ -14,6 +14,18 @@ from .single_conversation import process_single_conversation
 from .conversation_utils import EMOJI_LIST
 from .types import GroupConversationState
 from prompts import prompt_loader
+
+
+def _filter_images_for_character(
+    images: Optional[List[Dict[str, Any]]], character_config: Any
+) -> Optional[List[Dict[str, Any]]]:
+    """Drop image inputs when vision is disabled for the active character."""
+    if images and not character_config.enable_vision_input:
+        logger.info(
+            f"Ignored {len(images)} image input(s) because vision input is disabled"
+        )
+        return None
+    return images
 
 
 async def handle_conversation_trigger(
@@ -68,7 +80,9 @@ async def handle_conversation_trigger(
         user_input = received_data_buffers[client_uid]
         received_data_buffers[client_uid] = np.array([])
 
-    images = data.get("images")
+    images = _filter_images_for_character(
+        data.get("images"), context.character_config
+    )
     session_emoji = np.random.choice(EMOJI_LIST)
 
     group = chat_group_manager.get_client_group(client_uid)
