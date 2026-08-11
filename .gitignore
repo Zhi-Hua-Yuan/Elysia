@@ -13,6 +13,7 @@ conf.yaml
 # ignore non-default character configs
 /characters/*
 !/characters/README.md
+!/characters/zh_爱莉希雅_MVP.yaml
 # but all of the defaults are already tracked, so no need to un-ignore them
 
 # ignore avatars
