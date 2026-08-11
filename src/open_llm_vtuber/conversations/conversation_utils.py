@@ -148,6 +148,7 @@ async def process_user_input(
     user_input: Union[str, np.ndarray],
     asr_engine: ASRInterface,
     websocket_send: WebSocketSend,
+    turn_id: Optional[str] = None,
 ) -> str:
     """Process user input, converting audio to text if needed"""
     if isinstance(user_input, np.ndarray):
@@ -156,7 +157,8 @@ async def process_user_input(
         input_text = await asr_engine.async_transcribe_np(user_input)
         duration_ms = (perf_counter() - started_at) * 1000
         logger.info(
-            f"[PERF] stage=asr duration_ms={duration_ms:.1f} "
+            f"[PERF] turn_id={turn_id or 'untracked'} "
+            f"stage=asr duration_ms={duration_ms:.1f} "
             f"audio_samples={user_input.size}"
         )
         await websocket_send(

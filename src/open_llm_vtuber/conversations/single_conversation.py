@@ -30,6 +30,8 @@ async def process_single_conversation(
     images: Optional[List[Dict[str, Any]]] = None,
     session_emoji: str = np.random.choice(EMOJI_LIST),
     metadata: Optional[Dict[str, Any]] = None,
+    turn_id: Optional[str] = None,
+    conversation_started_at: Optional[float] = None,
 ) -> str:
     """Process a single-user conversation turn
 
@@ -46,17 +48,26 @@ async def process_single_conversation(
         str: Complete response text
     """
     # Create TTSTaskManager for this conversation
-    tts_manager = TTSTaskManager()
+    tts_manager = TTSTaskManager(
+        turn_id=turn_id,
+        conversation_started_at=conversation_started_at,
+    )
+    turn_id = tts_manager.turn_id
     full_response = ""  # Initialize full_response here
 
     try:
         # Send initial signals
         await send_conversation_start_signals(websocket_send)
-        logger.info(f"New Conversation Chain {session_emoji} started!")
+        logger.info(
+            f"New Conversation Chain {session_emoji} started! turn_id={turn_id}"
+        )
 
         # Process user input
         input_text = await process_user_input(
-            user_input, context.asr_engine, websocket_send
+            user_input,
+            context.asr_engine,
+            websocket_send,
+            turn_id=turn_id,
         )
 
         # Create batch input

@@ -2,6 +2,7 @@ from typing import Dict, List, Optional, Callable, TypedDict
 from fastapi import WebSocket, WebSocketDisconnect
 import asyncio
 import json
+import uuid
 from enum import Enum
 from time import perf_counter
 import numpy as np
@@ -70,7 +71,7 @@ class WebSocketHandler:
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
         self.default_context_cache = default_context_cache
         self.received_data_buffers: Dict[str, np.ndarray] = {}
-        self.conversation_started_at: Dict[str, tuple[float, str]] = {}
+        self.conversation_started_at: Dict[str, tuple[float, str, str]] = {}
 
         # Message handlers mapping
         self._message_handlers = self._init_message_handlers()
@@ -520,7 +521,13 @@ class WebSocketHandler:
     ) -> None:
         """Handle triggers that start a conversation"""
         input_type = data.get("type", "unknown")
-        self.conversation_started_at[client_uid] = (perf_counter(), input_type)
+        started_at = perf_counter()
+        turn_id = uuid.uuid4().hex[:12]
+        self.conversation_started_at[client_uid] = (
+            started_at,
+            input_type,
+            turn_id,
+        )
         await handle_conversation_trigger(
             msg_type=input_type,
             data=data,
@@ -533,6 +540,8 @@ class WebSocketHandler:
             received_data_buffers=self.received_data_buffers,
             current_conversation_tasks=self.current_conversation_tasks,
             broadcast_to_group=self.broadcast_to_group,
+            turn_id=turn_id,
+            conversation_started_at=started_at,
         )
 
     async def _handle_fetch_configs(
@@ -571,11 +580,12 @@ class WebSocketHandler:
         """
         timing = self.conversation_started_at.pop(client_uid, None)
         if timing is not None:
-            started_at, input_type = timing
+            started_at, input_type, turn_id = timing
             duration_ms = (perf_counter() - started_at) * 1000
             logger.info(
-                f"[PERF] stage=first_audio_playback duration_ms={duration_ms:.1f} "
-                f"input_type={input_type}"
+                f"[PERF] turn_id={turn_id} "
+                f"stage=frontend_audio_start_signal duration_ms={duration_ms:.1f} "
+                f"input_type={input_type} audio_presence=unverified"
             )
 
         group_members = self.chat_group_manager.get_group_members(client_uid)

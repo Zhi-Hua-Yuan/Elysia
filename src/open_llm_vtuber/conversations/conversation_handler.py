@@ -1,5 +1,6 @@
 import asyncio
 import json
+from time import perf_counter
 from typing import Any, Callable, Dict, List, Optional
 
 import numpy as np
@@ -40,6 +41,8 @@ async def handle_conversation_trigger(
     received_data_buffers: Dict[str, np.ndarray],
     current_conversation_tasks: Dict[str, Optional[asyncio.Task]],
     broadcast_to_group: Callable,
+    turn_id: Optional[str] = None,
+    conversation_started_at: Optional[float] = None,
 ) -> None:
     """Handle triggers that start a conversation"""
     metadata = None
@@ -119,6 +122,12 @@ async def handle_conversation_trigger(
                 images=images,
                 session_emoji=session_emoji,
                 metadata=metadata,
+                turn_id=turn_id,
+                conversation_started_at=(
+                    conversation_started_at
+                    if conversation_started_at is not None
+                    else perf_counter()
+                ),
             )
         )
 

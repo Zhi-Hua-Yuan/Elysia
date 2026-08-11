@@ -17,7 +17,11 @@ from .types import WebSocketSend
 class TTSTaskManager:
     """Manages TTS tasks and ensures ordered delivery to frontend while allowing parallel TTS generation"""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        turn_id: Optional[str] = None,
+        conversation_started_at: Optional[float] = None,
+    ) -> None:
         self.task_list: List[asyncio.Task] = []
         self._lock = asyncio.Lock()
         # Queue to store ordered payloads
@@ -29,6 +33,14 @@ class TTSTaskManager:
         self._next_sequence_to_send = 0
         self._llm_started_at: Optional[float] = None
         self._first_tts_queued = False
+        self._turn_id = turn_id or uuid.uuid4().hex[:12]
+        self._conversation_started_at = conversation_started_at
+        self._first_audio_payload_sent = False
+
+    @property
+    def turn_id(self) -> str:
+        """Return the correlation identifier used by performance logs."""
+        return self._turn_id
 
     def mark_llm_started(self) -> None:
         """Mark the start of LLM processing for first-sentence latency logging."""
@@ -76,7 +88,8 @@ class TTSTaskManager:
             if self._llm_started_at is not None:
                 duration_ms = (perf_counter() - self._llm_started_at) * 1000
                 logger.info(
-                    f"[PERF] stage=llm_first_sentence duration_ms={duration_ms:.1f}"
+                    f"[PERF] turn_id={self._turn_id} "
+                    f"stage=llm_first_sentence duration_ms={duration_ms:.1f}"
                 )
 
         # Get current sequence number
@@ -119,6 +132,19 @@ class TTSTaskManager:
                 while self._next_sequence_to_send in buffered_payloads:
                     next_payload = buffered_payloads.pop(self._next_sequence_to_send)
                     await websocket_send(json.dumps(next_payload))
+
+                    has_audio = bool(next_payload.get("audio"))
+                    if has_audio and not self._first_audio_payload_sent:
+                        self._first_audio_payload_sent = True
+                        if self._conversation_started_at is not None:
+                            duration_ms = (
+                                perf_counter() - self._conversation_started_at
+                            ) * 1000
+                            logger.info(
+                                f"[PERF] turn_id={self._turn_id} "
+                                "stage=first_audio_payload_sent "
+                                f"duration_ms={duration_ms:.1f} has_audio=True"
+                            )
                     self._next_sequence_to_send += 1
 
                 self._payload_queue.task_done()
@@ -152,6 +178,10 @@ class TTSTaskManager:
         """Process TTS generation and queue the result for ordered delivery"""
         audio_file_path = None
         started_at = perf_counter()
+        audio_ready_at = None
+        payload_ready_at = None
+        has_audio = False
+        success = False
         try:
             audio_file_path = await self._generate_audio(tts_engine, tts_text)
             audio_ready_at = perf_counter()
@@ -161,12 +191,8 @@ class TTSTaskManager:
                 actions=actions,
             )
             payload_ready_at = perf_counter()
-            logger.info(
-                f"[PERF] stage=tts sequence={sequence_number} "
-                f"synthesis_ms={(audio_ready_at - started_at) * 1000:.1f} "
-                f"payload_ms={(payload_ready_at - audio_ready_at) * 1000:.1f} "
-                f"total_ms={(payload_ready_at - started_at) * 1000:.1f}"
-            )
+            has_audio = bool(payload.get("audio"))
+            success = bool(audio_file_path) and has_audio
             # Queue the payload with its sequence number
             await self._payload_queue.put((payload, sequence_number))
 
@@ -178,9 +204,20 @@ class TTSTaskManager:
                 display_text=display_text,
                 actions=actions,
             )
+            payload_ready_at = perf_counter()
             await self._payload_queue.put((payload, sequence_number))
 
         finally:
+            completed_at = payload_ready_at or perf_counter()
+            synthesis_completed_at = audio_ready_at or completed_at
+            logger.info(
+                f"[PERF] turn_id={self._turn_id} stage=tts "
+                f"sequence={sequence_number} text_chars={len(tts_text)} "
+                f"synthesis_ms={(synthesis_completed_at - started_at) * 1000:.1f} "
+                f"payload_ms={(completed_at - synthesis_completed_at) * 1000:.1f} "
+                f"total_ms={(completed_at - started_at) * 1000:.1f} "
+                f"success={success} has_audio={has_audio}"
+            )
             if audio_file_path:
                 tts_engine.remove_file(audio_file_path)
                 logger.debug("Audio cache file cleaned.")
@@ -202,5 +239,6 @@ class TTSTaskManager:
         self._next_sequence_to_send = 0
         self._llm_started_at = None
         self._first_tts_queued = False
+        self._first_audio_payload_sent = False
         # Create a new queue to clear any pending items
         self._payload_queue = asyncio.Queue()
