@@ -6,6 +6,12 @@ Persona v1 只负责第一阶段的角色一致性与语音友好表达。它不
 
 完整、无密钥的可复现基线位于 `config_templates/conf.elysia.example.yaml`。日常运行可在前端选择 `characters/zh_爱莉希雅_MVP.yaml`；该局部配置继承本地 `conf.yaml` 的 LLM、ASR、TTS 和 VAD 设置。自动测试会强制两处 Persona 内容保持一致。本文档只记录设计决策和验收方法，不维护第三份可执行 prompt。
 
+`mao_pro` 只是占位模型。表情验收必须使用不同的映射索引：
+`neutral(0)`、`sadness(1)`、`anger(2)`、`joy(3)`。其中
+`fear/sadness`、`anger/disgust`、`joy/smirk/surprise` 分别共享同一索引，
+不能用同组标签验证多种不同表情。识别到的表情标签只用于 Live2D 控制，
+不得出现在字幕或 TTS 文本中。
+
 ## 已确认设定
 
 - 用户称呼：舰长。

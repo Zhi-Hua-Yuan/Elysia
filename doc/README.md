@@ -5,6 +5,9 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 
 ## MVP baseline notes
 
+- The Elysia M0 functional and performance acceptance record is maintained in
+  [`elysia-m0-acceptance.md`](elysia-m0-acceptance.md).
+
 - `edge-tts` uses Microsoft Edge's **online** text-to-speech service. It does
   not require an API key, but it does require network access and must not be
   described as a local or offline TTS engine.

@@ -73,20 +73,16 @@ class ServiceContext:
         self.client_uid: str = None
 
     def __str__(self):
+        character = self.character_config
         return (
             f"ServiceContext:\n"
             f"  System Config: {'Loaded' if self.system_config else 'Not Loaded'}\n"
-            f"    Details: {json.dumps(self.system_config.model_dump(), indent=6) if self.system_config else 'None'}\n"
-            f"  Live2D Model: {self.live2d_model.model_info if self.live2d_model else 'Not Loaded'}\n"
+            f"  Character: {character.conf_name if character else 'Not Loaded'}\n"
+            f"  Live2D Model: {character.live2d_model_name if character else 'Not Loaded'}\n"
             f"  ASR Engine: {type(self.asr_engine).__name__ if self.asr_engine else 'Not Loaded'}\n"
-            f"    Config: {json.dumps(self.character_config.asr_config.model_dump(), indent=6) if self.character_config.asr_config else 'None'}\n"
             f"  TTS Engine: {type(self.tts_engine).__name__ if self.tts_engine else 'Not Loaded'}\n"
-            f"    Config: {json.dumps(self.character_config.tts_config.model_dump(), indent=6) if self.character_config.tts_config else 'None'}\n"
             f"  LLM Engine: {type(self.agent_engine).__name__ if self.agent_engine else 'Not Loaded'}\n"
-            f"    Agent Config: {json.dumps(self.character_config.agent_config.model_dump(), indent=6) if self.character_config.agent_config else 'None'}\n"
             f"  VAD Engine: {type(self.vad_engine).__name__ if self.vad_engine else 'Not Loaded'}\n"
-            f"    Agent Config: {json.dumps(self.character_config.vad_config.model_dump(), indent=6) if self.character_config.vad_config else 'None'}\n"
-            f"  System Prompt: {self.system_prompt or 'Not Set'}\n"
             f"  MCP Enabled: {'Yes' if self.mcp_client else 'No'}"
         )
 
@@ -512,10 +508,7 @@ class ServiceContext:
                 }
                 new_config = validate_config(new_config)
                 await self.load_from_config(new_config)  # Await the async load
-                logger.debug(f"New config: {self}")
-                logger.debug(
-                    f"New character config: {self.character_config.model_dump()}"
-                )
+                logger.debug("New configuration loaded: {}", self)
 
                 # Send responses to client
                 await websocket.send_text(
@@ -545,13 +538,17 @@ class ServiceContext:
                 )
 
         except Exception as e:
-            logger.error(f"Error switching configuration: {e}")
-            logger.debug(self)
+            error_type = type(e).__name__
+            logger.error("Error switching configuration (error_type={})", error_type)
+            logger.debug("Service context after configuration error: {}", self)
             await websocket.send_text(
                 json.dumps(
                     {
                         "type": "error",
-                        "message": f"Error switching configuration: {str(e)}",
+                        "message": (
+                            "Error switching configuration "
+                            f"(error_type={error_type})"
+                        ),
                     }
                 )
             )

@@ -86,6 +86,13 @@ def actions_extractor(live2d_model: Live2dModel):
                         expressions = live2d_model.extract_emotion(sentence.text)
                         if expressions:
                             actions.expressions = expressions
+                            # Emotion keywords are control instructions for Live2D,
+                            # not user-facing text. Remove only recognized keywords
+                            # after extracting their actions so display and TTS stay
+                            # clean while the expression payload is preserved.
+                            sentence.text = live2d_model.remove_emotion_keywords(
+                                sentence.text
+                            )
                     yield sentence, actions  # Yield the tuple
                 elif isinstance(item, dict):
                     # Pass through dictionaries

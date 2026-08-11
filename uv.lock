@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10, <3.13"
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
@@ -434,18 +435,17 @@ wheels = [
 
 [[package]]
 name = "edge-tts"
-version = "7.0.0"
+version = "7.2.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
     { name = "certifi" },
-    { name = "srt" },
     { name = "tabulate" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/40/4c/887ec101638f89d4f5e4c9c437d1411bcd61070df6a177cd37a93af90c7c/edge_tts-7.0.0.tar.gz", hash = "sha256:bd5db0c05bb7fd973397922f70fc8371c7be2bb4911f9c38bd38c14ed7b52a2d", size = 21061 }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/60/afbf548b43c78355e03926c6b1fff7500303a2da4d84db9e1324119e21ae/edge_tts-7.2.8.tar.gz", hash = "sha256:fcf185a0d527a0d2d003f9d5841facc1d5e0e7b3b88d5df9c32990402c6b8cd0", size = 27875 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f8/37/00c211f1021f9b04dde72dcbee72ce66248519c3899a47b06f8940a67c08/edge_tts-7.0.0-py3-none-any.whl", hash = "sha256:c99e91caba83c28e6f1fff1098a8188f541ba9615944c7a6f8f5625e02848044", size = 23337 },
+    { url = "https://files.pythonhosted.org/packages/8c/2b/a8cb687b92a2690d2ad171f0c2fd1c8f18690363cca7618bab2bbe4cdf2b/edge_tts-7.2.8-py3-none-any.whl", hash = "sha256:361fe48ce7ef613adbe30f664e3765dd71029c6cb57427279eff8ad6df2eb211", size = 31026 },
 ]
 
 [[package]]
@@ -1212,7 +1212,7 @@ requires-dist = [
     { name = "brotli", marker = "extra == 'bilibili'", specifier = "~=1.1.0" },
     { name = "chardet", specifier = ">=5.2.0" },
     { name = "duckduckgo-mcp-server", specifier = ">=0.1.1" },
-    { name = "edge-tts", specifier = ">=7.0.0" },
+    { name = "edge-tts", specifier = ">=7.2.8" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115.8" },
     { name = "groq", specifier = ">=0.13.0" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -1243,6 +1243,7 @@ requires-dist = [
     { name = "websocket-client", specifier = ">=1.8.0" },
     { name = "yarl", marker = "extra == 'bilibili'", specifier = "~=1.9.3" },
 ]
+provides-extras = ["bilibili"]
 
 [[package]]
 name = "openai"
@@ -4271,12 +4272,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/3f/f4/4a80cd6ef364b2e8b
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e7/9c/0e6afc12c269578be5c0c1c9f4b49a8d32770a080260c333ac04cc1c832d/soupsieve-2.7-py3-none-any.whl", hash = "sha256:6e60cc5c1ffaf1cebcc12e8188320b72071e922c2e897f737cadce79ad5d30c4", size = 36677 },
 ]
-
-[[package]]
-name = "srt"
-version = "3.5.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/66/b7/4a1bc231e0681ebf339337b0cd05b91dc6a0d701fa852bb812e244b7a030/srt-3.5.3.tar.gz", hash = "sha256:4884315043a4f0740fd1f878ed6caa376ac06d70e135f306a6dc44632eed0cc0", size = 28296 }
 
 [[package]]
 name = "sse-starlette"
