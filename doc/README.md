@@ -5,6 +5,9 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 
 ## MVP baseline notes
 
+- The current Elysia project status and milestone plan is maintained in
+  [`elysia-project-progress.md`](elysia-project-progress.md).
+
 - The Elysia M0 functional and performance acceptance record is maintained in
   [`elysia-m0-acceptance.md`](elysia-m0-acceptance.md).
 

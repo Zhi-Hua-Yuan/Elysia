@@ -60,6 +60,7 @@ class ElysiaPersonaTemplateTests(unittest.TestCase):
         required_phrases = (
             "你是爱莉希雅",
             "舰长",
+            "使用“你”而不是敬语“您”",
             "温柔",
             "俏皮",
             "1 到 4 句",
