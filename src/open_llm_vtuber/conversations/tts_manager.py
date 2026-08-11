@@ -17,6 +17,8 @@ from .types import WebSocketSend
 class TTSTaskManager:
     """Manages TTS tasks and ensures ordered delivery to frontend while allowing parallel TTS generation"""
 
+    _LATER_TTS_CONCURRENCY_LIMIT = 2
+
     def __init__(
         self,
         turn_id: Optional[str] = None,
@@ -35,6 +37,9 @@ class TTSTaskManager:
         self._first_tts_queued = False
         self._first_tts_sequence: Optional[int] = None
         self._first_tts_done = asyncio.Event()
+        self._later_tts_semaphore = asyncio.Semaphore(
+            self._LATER_TTS_CONCURRENCY_LIMIT
+        )
         self._turn_id = turn_id or uuid.uuid4().hex[:12]
         self._conversation_started_at = conversation_started_at
         self._first_audio_payload_sent = False
@@ -182,10 +187,12 @@ class TTSTaskManager:
         """Process TTS generation and queue the result for ordered delivery"""
         is_first_tts = sequence_number == self._first_tts_sequence
         first_tts_done = self._first_tts_done
+        later_tts_semaphore = self._later_tts_semaphore
         gate_wait_started_at = perf_counter()
         if not is_first_tts:
             await first_tts_done.wait()
         gate_wait_ms = (perf_counter() - gate_wait_started_at) * 1000
+        concurrency_wait_ms = 0.0
 
         audio_file_path = None
         started_at = perf_counter()
@@ -194,7 +201,19 @@ class TTSTaskManager:
         has_audio = False
         success = False
         try:
-            audio_file_path = await self._generate_audio(tts_engine, tts_text)
+            if is_first_tts:
+                audio_file_path = await self._generate_audio(tts_engine, tts_text)
+            else:
+                concurrency_wait_started_at = perf_counter()
+                async with later_tts_semaphore:
+                    concurrency_wait_ms = (
+                        perf_counter() - concurrency_wait_started_at
+                    ) * 1000
+                    # Limit only remote synthesis. Payload conversion and
+                    # ordered delivery do not consume an Edge TTS slot.
+                    audio_file_path = await self._generate_audio(
+                        tts_engine, tts_text
+                    )
             audio_ready_at = perf_counter()
             payload = prepare_audio_payload(
                 audio_path=audio_file_path,
@@ -229,6 +248,8 @@ class TTSTaskManager:
                 f"[PERF] turn_id={self._turn_id} stage=tts "
                 f"sequence={sequence_number} text_chars={len(tts_text)} "
                 f"first_exclusive={is_first_tts} gate_wait_ms={gate_wait_ms:.1f} "
+                f"concurrency_limit={self._LATER_TTS_CONCURRENCY_LIMIT} "
+                f"concurrency_wait_ms={concurrency_wait_ms:.1f} "
                 f"synthesis_ms={(synthesis_completed_at - started_at) * 1000:.1f} "
                 f"payload_ms={(completed_at - synthesis_completed_at) * 1000:.1f} "
                 f"total_ms={(completed_at - started_at) * 1000:.1f} "
@@ -264,6 +285,9 @@ class TTSTaskManager:
         self._first_tts_queued = False
         self._first_tts_sequence = None
         self._first_tts_done = asyncio.Event()
+        self._later_tts_semaphore = asyncio.Semaphore(
+            self._LATER_TTS_CONCURRENCY_LIMIT
+        )
         self._first_audio_payload_sent = False
         # Create a new queue to clear any pending items
         self._payload_queue = asyncio.Queue()
