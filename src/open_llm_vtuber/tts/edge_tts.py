@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import os
 
@@ -24,6 +25,54 @@ class TTSEngine(TTSInterface):
         if not os.path.exists(self.new_audio_dir):
             os.makedirs(self.new_audio_dir)
 
+    @staticmethod
+    def _remove_incomplete_file(file_name: str) -> None:
+        """Remove a partial audio file left by a failed or cancelled request."""
+        try:
+            os.remove(file_name)
+        except FileNotFoundError:
+            return
+        except OSError as error:
+            logger.warning(
+                "Unable to remove incomplete Edge TTS file (error_type={})",
+                type(error).__name__,
+            )
+
+    @staticmethod
+    def _log_generation_error(error: Exception) -> None:
+        """Log an actionable error without exposing input text or endpoints."""
+        logger.error(
+            "Edge TTS generation failed (error_type={})", type(error).__name__
+        )
+        logger.error("Edge TTS may be unavailable or blocked in the current network.")
+
+    async def async_generate_audio(self, text: str, file_name_no_ext=None):
+        """Generate audio using Edge TTS' native asynchronous API.
+
+        Cancellation is deliberately propagated so conversation interruption can
+        close the in-flight Edge connection. Any partially written cache file is
+        removed before control returns to the caller.
+        """
+        file_name = self.generate_cache_file_name(
+            file_name_no_ext, self.file_extension
+        )
+        completed = False
+
+        try:
+            communicate = edge_tts.Communicate(text, self.voice)
+            await communicate.save(file_name)
+            completed = True
+            return file_name
+        except asyncio.CancelledError:
+            logger.debug("Edge TTS generation cancelled")
+            raise
+        except Exception as error:
+            self._log_generation_error(error)
+            return None
+        finally:
+            if not completed:
+                self._remove_incomplete_file(file_name)
+
     def generate_audio(self, text, file_name_no_ext=None):
         """
         Generate speech audio file using TTS.
@@ -39,13 +88,17 @@ class TTSEngine(TTSInterface):
         """
         file_name = self.generate_cache_file_name(file_name_no_ext, self.file_extension)
 
+        completed = False
         try:
             communicate = edge_tts.Communicate(text, self.voice)
             communicate.save_sync(file_name)
-        except Exception as e:
-            logger.critical(f"\nError: edge-tts unable to generate audio: {e}")
-            logger.critical("It's possible that edge-tts is blocked in your region.")
+            completed = True
+        except Exception as error:
+            self._log_generation_error(error)
             return None
+        finally:
+            if not completed:
+                self._remove_incomplete_file(file_name)
 
         return file_name
 
