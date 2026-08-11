@@ -76,7 +76,7 @@ character_config:
         interrupt_method: 'user'
 
   asr_config:
-    # 麦克风/VAD 暂时待补测，配置仍保持 M0 的 SenseVoice 方案。
+    # M0 已验收的本地 SenseVoiceSmall int8/CPU 方案。
     asr_model: 'sherpa_onnx_asr'
     sherpa_onnx_asr:
       model_type: 'sense_voice'
@@ -87,8 +87,23 @@ character_config:
       provider: 'cpu'
 
   tts_config:
-    # Edge TTS 是在线服务，需要网络连接；它不是本地离线 TTS。
-    tts_model: 'edge_tts'
+    # MVP-A 默认使用 M0 已验收的 Sherpa-ONNX 本地通用女声。
+    # 该声音只用于验证语音链路，不代表最终爱莉希雅音色。
+    tts_model: 'sherpa_onnx_tts'
+    sherpa_onnx_tts:
+      vits_model: 'models/vits-melo-tts-zh_en/model.onnx'
+      vits_lexicon: 'models/vits-melo-tts-zh_en/lexicon.txt'
+      vits_tokens: 'models/vits-melo-tts-zh_en/tokens.txt'
+      vits_data_dir: ''
+      vits_dict_dir: 'models/vits-melo-tts-zh_en/dict'
+      tts_rule_fsts: 'models/vits-melo-tts-zh_en/number.fst,models/vits-melo-tts-zh_en/phone.fst,models/vits-melo-tts-zh_en/date.fst,models/vits-melo-tts-zh_en/new_heteronym.fst'
+      max_num_sentences: 2
+      sid: 0
+      provider: 'cpu'
+      num_threads: 4
+      speed: 1.0
+      debug: false
+    # Edge TTS 是需要网络连接的在线回退，不是本地离线 TTS。
     edge_tts:
       voice: 'zh-CN-XiaoxiaoNeural'
 

@@ -86,13 +86,22 @@ class ElysiaPersonaTemplateTests(unittest.TestCase):
 
     def test_mvp_provider_choices_remain_narrow(self) -> None:
         agent_config = self.character.agent_config
+        tts_config = self.character.tts_config
+        sherpa_tts = tts_config.sherpa_onnx_tts
 
         self.assertEqual(agent_config.conversation_agent_choice, "basic_memory_agent")
         self.assertFalse(
             agent_config.agent_settings.basic_memory_agent.use_mcpp
         )
         self.assertEqual(self.character.asr_config.asr_model, "sherpa_onnx_asr")
-        self.assertEqual(self.character.tts_config.tts_model, "edge_tts")
+        self.assertEqual(tts_config.tts_model, "sherpa_onnx_tts")
+        self.assertEqual(
+            sherpa_tts.vits_model,
+            "models/vits-melo-tts-zh_en/model.onnx",
+        )
+        self.assertEqual(sherpa_tts.sid, 0)
+        self.assertEqual(sherpa_tts.provider, "cpu")
+        self.assertEqual(sherpa_tts.num_threads, 4)
         self.assertIsNone(self.character.vad_config.vad_model)
 
 

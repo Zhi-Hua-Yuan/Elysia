@@ -5,8 +5,27 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 
 ## MVP baseline notes
 
+- The completed M2 stabilization and reproducibility acceptance record is
+  maintained in [`elysia-m2-acceptance.md`](elysia-m2-acceptance.md).
+
 - The current Elysia project status and milestone plan is maintained in
   [`elysia-project-progress.md`](elysia-project-progress.md).
+
+- The reproducible Windows/uv setup guide for MVP-A is maintained in
+  [`elysia-mvp-a-setup.md`](elysia-mvp-a-setup.md).
+
+- The M2.3 reproducible setup acceptance record is maintained in
+  [`elysia-m2-3-acceptance.md`](elysia-m2-3-acceptance.md).
+
+- The MVP-A smoke checklist and symptom-based troubleshooting guide is
+  maintained in
+  [`elysia-mvp-a-smoke-and-troubleshooting.md`](elysia-mvp-a-smoke-and-troubleshooting.md).
+
+- The M2.4 smoke-test acceptance record is maintained in
+  [`elysia-m2-4-acceptance.md`](elysia-m2-4-acceptance.md).
+
+- The frozen backend, Web frontend, and Electron runtime relationship is
+  recorded in [`elysia-m2-runtime-baseline.md`](elysia-m2-runtime-baseline.md).
 
 - The Elysia M1 Persona v1 acceptance record is maintained in
   [`elysia-m1-acceptance.md`](elysia-m1-acceptance.md).
