@@ -25,6 +25,42 @@ class _FakeTTS:
         self.removed.append(filepath)
 
 
+class _ExclusiveTTS:
+    def __init__(self) -> None:
+        self.started: list[str] = []
+        self.first_release = asyncio.Event()
+        self.later_release = asyncio.Event()
+        self.two_later_started = asyncio.Event()
+
+    async def async_generate_audio(self, text: str, file_name_no_ext=None):
+        self.started.append(text)
+        if text == "第一段":
+            await self.first_release.wait()
+        else:
+            later_count = len([item for item in self.started if item != "第一段"])
+            if later_count == 2:
+                self.two_later_started.set()
+            await self.later_release.wait()
+        return f"{text}.wav"
+
+    def remove_file(self, filepath: str) -> None:
+        return None
+
+
+class _FirstFailureTTS:
+    def __init__(self) -> None:
+        self.started: list[str] = []
+
+    async def async_generate_audio(self, text: str, file_name_no_ext=None):
+        self.started.append(text)
+        if text == "第一段":
+            raise RuntimeError("simulated first TTS failure")
+        return f"{text}.wav"
+
+    def remove_file(self, filepath: str) -> None:
+        return None
+
+
 def _payload(audio_path, display_text=None, actions=None, **_kwargs):
     if isinstance(display_text, DisplayText):
         display_text = display_text.to_dict()
@@ -170,3 +206,183 @@ def test_trigger_passes_same_turn_id_to_conversation() -> None:
     assert stored_input_type == "text-input"
     assert kwargs["turn_id"] == stored_turn_id
     assert kwargs["conversation_started_at"] == stored_started_at
+
+
+def test_first_tts_is_exclusive_then_later_tasks_resume_in_parallel() -> None:
+    async def scenario() -> None:
+        sent: list[dict] = []
+
+        async def websocket_send(message: str) -> None:
+            sent.append(json.loads(message))
+
+        manager = TTSTaskManager(turn_id="turn-exclusive-test")
+        tts = _ExclusiveTTS()
+
+        with patch(
+            "open_llm_vtuber.conversations.tts_manager.prepare_audio_payload",
+            side_effect=_payload,
+        ):
+            for text in ("第一段", "第二段", "第三段"):
+                await manager.speak(
+                    tts_text=text,
+                    display_text=DisplayText(text=text),
+                    actions=None,
+                    live2d_model=SimpleNamespace(),
+                    tts_engine=tts,
+                    websocket_send=websocket_send,
+                )
+
+            await asyncio.sleep(0)
+            assert tts.started == ["第一段"]
+
+            tts.first_release.set()
+            await asyncio.wait_for(tts.two_later_started.wait(), timeout=1)
+            assert set(tts.started) == {"第一段", "第二段", "第三段"}
+
+            tts.later_release.set()
+            await asyncio.gather(*manager.task_list)
+            await asyncio.wait_for(manager._payload_queue.join(), timeout=1)
+
+        assert [item["display_text"]["text"] for item in sent] == [
+            "第一段",
+            "第二段",
+            "第三段",
+        ]
+        sender_task = manager._sender_task
+        manager.clear()
+        if sender_task:
+            await asyncio.gather(sender_task, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_first_tts_failure_releases_later_tasks_and_preserves_order() -> None:
+    async def scenario() -> None:
+        sent: list[dict] = []
+
+        async def websocket_send(message: str) -> None:
+            sent.append(json.loads(message))
+
+        manager = TTSTaskManager(turn_id="turn-exclusive-failure")
+        tts = _FirstFailureTTS()
+
+        with patch(
+            "open_llm_vtuber.conversations.tts_manager.prepare_audio_payload",
+            side_effect=_payload,
+        ):
+            for text in ("第一段", "第二段"):
+                await manager.speak(
+                    tts_text=text,
+                    display_text=DisplayText(text=text),
+                    actions=None,
+                    live2d_model=SimpleNamespace(),
+                    tts_engine=tts,
+                    websocket_send=websocket_send,
+                )
+            await asyncio.gather(*manager.task_list)
+            await asyncio.wait_for(manager._payload_queue.join(), timeout=1)
+
+        assert tts.started == ["第一段", "第二段"]
+        assert [item["display_text"]["text"] for item in sent] == [
+            "第一段",
+            "第二段",
+        ]
+        assert sent[0]["audio"] is None
+        assert sent[1]["audio"] == "ENCODED_AUDIO"
+        sender_task = manager._sender_task
+        manager.clear()
+        if sender_task:
+            await asyncio.gather(sender_task, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_silent_payload_does_not_claim_first_tts_exclusivity() -> None:
+    async def scenario() -> None:
+        sent: list[dict] = []
+
+        async def websocket_send(message: str) -> None:
+            sent.append(json.loads(message))
+
+        manager = TTSTaskManager(turn_id="turn-exclusive-silent")
+        tts = _ExclusiveTTS()
+
+        with patch(
+            "open_llm_vtuber.conversations.tts_manager.prepare_audio_payload",
+            side_effect=_payload,
+        ):
+            await manager.speak(
+                tts_text="...",
+                display_text=DisplayText(text="静默片段"),
+                actions=None,
+                live2d_model=SimpleNamespace(),
+                tts_engine=tts,
+                websocket_send=websocket_send,
+            )
+            for text in ("第一段", "第二段", "第三段"):
+                await manager.speak(
+                    tts_text=text,
+                    display_text=DisplayText(text=text),
+                    actions=None,
+                    live2d_model=SimpleNamespace(),
+                    tts_engine=tts,
+                    websocket_send=websocket_send,
+                )
+
+            await asyncio.sleep(0)
+            assert manager._first_tts_sequence == 1
+            assert tts.started == ["第一段"]
+            tts.first_release.set()
+            await asyncio.wait_for(tts.two_later_started.wait(), timeout=1)
+            tts.later_release.set()
+            await asyncio.gather(*manager.task_list)
+            await asyncio.wait_for(manager._payload_queue.join(), timeout=1)
+
+        assert [item["display_text"]["text"] for item in sent] == [
+            "静默片段",
+            "第一段",
+            "第二段",
+            "第三段",
+        ]
+        sender_task = manager._sender_task
+        manager.clear()
+        if sender_task:
+            await asyncio.gather(sender_task, return_exceptions=True)
+
+    asyncio.run(scenario())
+
+
+def test_clear_cancels_first_tts_and_gate_waiters() -> None:
+    async def scenario() -> None:
+        manager = TTSTaskManager(turn_id="turn-exclusive-cancel")
+        tts = _ExclusiveTTS()
+
+        with patch(
+            "open_llm_vtuber.conversations.tts_manager.prepare_audio_payload",
+            side_effect=_payload,
+        ):
+            for text in ("第一段", "第二段"):
+                await manager.speak(
+                    tts_text=text,
+                    display_text=DisplayText(text=text),
+                    actions=None,
+                    live2d_model=SimpleNamespace(),
+                    tts_engine=tts,
+                    websocket_send=AsyncMock(),
+                )
+
+            await asyncio.sleep(0)
+            assert tts.started == ["第一段"]
+            tasks = list(manager.task_list)
+            sender_task = manager._sender_task
+            manager.clear()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            if sender_task:
+                await asyncio.gather(sender_task, return_exceptions=True)
+
+        assert all(task.cancelled() for task in tasks)
+        assert tts.started == ["第一段"]
+        assert manager._first_tts_sequence is None
+        assert not manager._first_tts_done.is_set()
+
+    asyncio.run(scenario())

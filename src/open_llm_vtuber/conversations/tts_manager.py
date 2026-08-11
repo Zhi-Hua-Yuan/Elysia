@@ -33,6 +33,8 @@ class TTSTaskManager:
         self._next_sequence_to_send = 0
         self._llm_started_at: Optional[float] = None
         self._first_tts_queued = False
+        self._first_tts_sequence: Optional[int] = None
+        self._first_tts_done = asyncio.Event()
         self._turn_id = turn_id or uuid.uuid4().hex[:12]
         self._conversation_started_at = conversation_started_at
         self._first_audio_payload_sent = False
@@ -95,6 +97,8 @@ class TTSTaskManager:
         # Get current sequence number
         current_sequence = self._sequence_counter
         self._sequence_counter += 1
+        if self._first_tts_sequence is None:
+            self._first_tts_sequence = current_sequence
 
         # Start sender task if not running
         if not self._sender_task or self._sender_task.done():
@@ -176,6 +180,13 @@ class TTSTaskManager:
         sequence_number: int,
     ) -> None:
         """Process TTS generation and queue the result for ordered delivery"""
+        is_first_tts = sequence_number == self._first_tts_sequence
+        first_tts_done = self._first_tts_done
+        gate_wait_started_at = perf_counter()
+        if not is_first_tts:
+            await first_tts_done.wait()
+        gate_wait_ms = (perf_counter() - gate_wait_started_at) * 1000
+
         audio_file_path = None
         started_at = perf_counter()
         audio_ready_at = None
@@ -208,11 +219,16 @@ class TTSTaskManager:
             await self._payload_queue.put((payload, sequence_number))
 
         finally:
+            # Always release subsequent TTS tasks, including when the first
+            # task is cancelled or fails before it can enqueue a payload.
+            if is_first_tts:
+                first_tts_done.set()
             completed_at = payload_ready_at or perf_counter()
             synthesis_completed_at = audio_ready_at or completed_at
             logger.info(
                 f"[PERF] turn_id={self._turn_id} stage=tts "
                 f"sequence={sequence_number} text_chars={len(tts_text)} "
+                f"first_exclusive={is_first_tts} gate_wait_ms={gate_wait_ms:.1f} "
                 f"synthesis_ms={(synthesis_completed_at - started_at) * 1000:.1f} "
                 f"payload_ms={(completed_at - synthesis_completed_at) * 1000:.1f} "
                 f"total_ms={(completed_at - started_at) * 1000:.1f} "
@@ -232,13 +248,22 @@ class TTSTaskManager:
 
     def clear(self) -> None:
         """Clear all pending tasks and reset state"""
+        for task in self.task_list:
+            if not task.done():
+                task.cancel()
+        # Wake any gate waiters as a defensive fallback. The tasks above are
+        # cancelled first so they cannot begin new synthesis after cleanup.
+        self._first_tts_done.set()
         self.task_list.clear()
         if self._sender_task:
             self._sender_task.cancel()
+            self._sender_task = None
         self._sequence_counter = 0
         self._next_sequence_to_send = 0
         self._llm_started_at = None
         self._first_tts_queued = False
+        self._first_tts_sequence = None
+        self._first_tts_done = asyncio.Event()
         self._first_audio_payload_sent = False
         # Create a new queue to clear any pending items
         self._payload_queue = asyncio.Queue()
