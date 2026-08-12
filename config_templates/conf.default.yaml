@@ -351,6 +351,7 @@ character_config:
       # Either 'normal' or 'balanced'. balance is faster but lower quality.
       latency: 'balanced'
       base_url: 'https://api.fish.audio'
+      model: 's2.1-pro-free'
 
     coqui_tts:
       # Name of the TTS model to use. If empty, will use default model

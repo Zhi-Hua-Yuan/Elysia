@@ -106,6 +106,13 @@ character_config:
     # Edge TTS 是需要网络连接的在线回退，不是本地离线 TTS。
     edge_tts:
       voice: 'zh-CN-XiaoxiaoNeural'
+    # M3 在线音色候选。仅在本地确认来源与使用范围后启用；默认仍使用 Sherpa。
+    fish_api_tts:
+      api_key: '${ELYSIA_FISH_API_KEY}'
+      reference_id: 'aca922eff5f0446fbfd395fe03e48f35'
+      latency: 'balanced'
+      base_url: 'https://api.fish.audio'
+      model: 's2.1-pro-free'
 
   vad_config:
     # 保持与 M0 基线一致；浏览器 VAD 由前端负责。

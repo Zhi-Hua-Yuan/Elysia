@@ -120,6 +120,7 @@ class TTSFactory:
                 reference_id=kwargs.get("reference_id"),
                 latency=kwargs.get("latency"),
                 base_url=kwargs.get("base_url"),
+                model=kwargs.get("model", "s2.1-pro-free"),
             )
         elif engine_type == "minimax_tts":
             from .minimax_tts import TTSEngine as MinimaxTTSEngine

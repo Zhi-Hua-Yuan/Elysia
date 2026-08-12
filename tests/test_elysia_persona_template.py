@@ -32,19 +32,23 @@ class ElysiaPersonaTemplateTests(unittest.TestCase):
         self.assertFalse(self.character.enable_vision_input)
 
     def test_template_keeps_credentials_out_of_source_control(self) -> None:
-        llm_config = self.raw_config["character_config"]["agent_config"][
-            "llm_configs"
-        ]["openai_compatible_llm"]
+        llm_config = self.raw_config["character_config"]["agent_config"]["llm_configs"][
+            "openai_compatible_llm"
+        ]
 
         self.assertEqual(llm_config["base_url"], "${ELYSIA_LLM_BASE_URL}")
         self.assertEqual(llm_config["model"], "${ELYSIA_LLM_MODEL}")
         self.assertEqual(llm_config["llm_api_key"], "${ELYSIA_LLM_API_KEY}")
+        self.assertEqual(
+            self.raw_config["character_config"]["tts_config"]["fish_api_tts"][
+                "api_key"
+            ],
+            "${ELYSIA_FISH_API_KEY}",
+        )
 
     def test_selectable_character_matches_full_template_persona(self) -> None:
         self.assertEqual(self.character_override["conf_name"], "爱莉希雅 MVP")
-        self.assertEqual(
-            self.character_override["conf_uid"], self.character.conf_uid
-        )
+        self.assertEqual(self.character_override["conf_uid"], self.character.conf_uid)
         self.assertEqual(
             self.character_override["character_name"], self.character.character_name
         )
@@ -90,11 +94,14 @@ class ElysiaPersonaTemplateTests(unittest.TestCase):
         sherpa_tts = tts_config.sherpa_onnx_tts
 
         self.assertEqual(agent_config.conversation_agent_choice, "basic_memory_agent")
-        self.assertFalse(
-            agent_config.agent_settings.basic_memory_agent.use_mcpp
-        )
+        self.assertFalse(agent_config.agent_settings.basic_memory_agent.use_mcpp)
         self.assertEqual(self.character.asr_config.asr_model, "sherpa_onnx_asr")
         self.assertEqual(tts_config.tts_model, "sherpa_onnx_tts")
+        self.assertEqual(tts_config.fish_api_tts.model, "s2.1-pro-free")
+        self.assertEqual(
+            tts_config.fish_api_tts.reference_id,
+            "aca922eff5f0446fbfd395fe03e48f35",
+        )
         self.assertEqual(
             sherpa_tts.vits_model,
             "models/vits-melo-tts-zh_en/model.onnx",

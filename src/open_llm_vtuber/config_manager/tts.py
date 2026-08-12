@@ -208,6 +208,7 @@ class FishAPITTSConfig(I18nMixin):
     reference_id: str = Field(..., alias="reference_id")
     latency: Literal["normal", "balanced"] = Field(..., alias="latency")
     base_url: str = Field(..., alias="base_url")
+    model: str = Field("s2.1-pro-free", alias="model")
 
     DESCRIPTIONS: ClassVar[Dict[str, Description]] = {
         "api_key": Description(
@@ -222,6 +223,9 @@ class FishAPITTSConfig(I18nMixin):
         ),
         "base_url": Description(
             en="Base URL for Fish TTS API", zh="Fish TTS API 的基础 URL"
+        ),
+        "model": Description(
+            en="Fish Audio TTS model name", zh="Fish Audio TTS 模型名称"
         ),
     }
 

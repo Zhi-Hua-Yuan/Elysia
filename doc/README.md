@@ -8,6 +8,13 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 - The completed M2 stabilization and reproducibility acceptance record is
   maintained in [`elysia-m2-acceptance.md`](elysia-m2-acceptance.md).
 
+- The M3 asset intake and rights boundary is maintained in
+  [`elysia-m3-asset-contract.md`](elysia-m3-asset-contract.md).
+
+- The Fish Audio online voice technical acceptance and measured latency are
+  maintained in
+  [`elysia-m3-fish-tts-acceptance.md`](elysia-m3-fish-tts-acceptance.md).
+
 - The current Elysia project status and milestone plan is maintained in
   [`elysia-project-progress.md`](elysia-project-progress.md).
 

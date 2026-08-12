@@ -359,6 +359,7 @@ character_config:
       # 'normal' 或 'balanced'。balanced 更快但质量较低。
       latency: 'balanced' # 延迟
       base_url: 'https://api.fish.audio' # 基础 URL
+      model: 's2.1-pro-free' # 免费开发者 TTS 模型
 
     coqui_tts:
       # 要使用的 TTS 模型的名称。如果为空，将使用默认模型
