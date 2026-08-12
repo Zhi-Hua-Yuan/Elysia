@@ -463,6 +463,17 @@ character_config:
         source_lang: 'zh'
         target_lang: 'ja'
 
+# Lightweight persistent memory (M5; disabled until the runtime is implemented)
+memory_config:
+  enabled: false
+  profile_id: 'local_default'
+  storage_dir: 'memory_data'
+  max_items: 24
+  max_item_chars: 160
+  max_context_chars: 800
+  explicit_capture: true
+  implicit_capture: false
+
 # Live Streaming Integration
 live_config:
   bilibili_live:

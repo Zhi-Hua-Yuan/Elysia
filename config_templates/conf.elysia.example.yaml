@@ -132,6 +132,17 @@ character_config:
         deeplx_target_lang: 'JA'
         deeplx_api_endpoint: 'http://localhost:1188/v2/translate'
 
+# M5 轻量持久记忆契约；当前仅定义配置，尚未接入运行链路。
+memory_config:
+  enabled: false
+  profile_id: 'local_default'
+  storage_dir: 'memory_data'
+  max_items: 24
+  max_item_chars: 160
+  max_context_chars: 800
+  explicit_capture: true
+  implicit_capture: false
+
 live_config:
   bilibili_live:
     room_ids: []

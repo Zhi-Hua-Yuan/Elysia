@@ -459,6 +459,17 @@ character_config:
         source_lang: 'zh'
         target_lang: 'ja'
 
+# 轻量持久记忆（M5；运行时实现完成前保持关闭）
+memory_config:
+  enabled: false
+  profile_id: 'local_default'
+  storage_dir: 'memory_data'
+  max_items: 24
+  max_item_chars: 160
+  max_context_chars: 800
+  explicit_capture: true
+  implicit_capture: false
+
 # 直播平台集成
 live_config:
   bilibili_live:

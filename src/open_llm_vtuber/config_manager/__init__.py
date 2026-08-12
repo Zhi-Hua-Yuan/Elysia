@@ -10,6 +10,7 @@ from .main import Config
 from .system import SystemConfig
 from .character import CharacterConfig
 from .live import LiveConfig, BiliBiliLiveConfig
+from .memory import MemoryConfig
 from .stateless_llm import (
     OpenAICompatibleConfig,
     ClaudeConfig,
@@ -71,6 +72,7 @@ __all__ = [
     "CharacterConfig",
     "LiveConfig",
     "BiliBiliLiveConfig",
+    "MemoryConfig",
     # LLM related classes
     "OpenAICompatibleConfig",
     "ClaudeConfig",

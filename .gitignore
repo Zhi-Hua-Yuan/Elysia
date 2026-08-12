@@ -68,6 +68,7 @@ openapi_memgpt.json
 
 # memory log
 mem.json
+/memory_data/
 conf.yaml.backup
 
 *.exe
