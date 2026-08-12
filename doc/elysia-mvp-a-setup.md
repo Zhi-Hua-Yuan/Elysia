@@ -2,6 +2,10 @@
 
 更新日期：2026-08-11
 
+> 本文保留 M2 阶段以 Sherpa-ONNX 为默认 TTS 的历史验收基线。M3.3 之后的
+> 当前软件 RC 已改为 Fish Audio 默认、Sherpa 手动回退；日常重建和启动请使用
+> [`elysia-software-rc-runbook.md`](elysia-software-rc-runbook.md)。
+
 ## 文档状态
 
 - M2.3.1 配置基线对齐：已完成。

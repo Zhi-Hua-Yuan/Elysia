@@ -5,6 +5,14 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 
 ## MVP baseline notes
 
+- The current M3.4 Fish-default software RC setup, smoke test, fallback, and
+  troubleshooting guide is maintained in
+  [`elysia-software-rc-runbook.md`](elysia-software-rc-runbook.md).
+
+- The completed M3.4 reproducibility and software RC acceptance record is
+  maintained in
+  [`elysia-m3-4-acceptance.md`](elysia-m3-4-acceptance.md).
+
 - The completed M2 stabilization and reproducibility acceptance record is
   maintained in [`elysia-m2-acceptance.md`](elysia-m2-acceptance.md).
 

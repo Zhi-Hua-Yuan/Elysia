@@ -2,6 +2,10 @@
 
 更新日期：2026-08-11
 
+> 本文保留 M2 阶段以 Sherpa-ONNX 为默认 TTS 的历史冒烟基线。M3.3 之后的
+> Fish 默认软件 RC 请按
+> [`elysia-software-rc-runbook.md`](elysia-software-rc-runbook.md) 验收和排查。
+
 状态：M2.4 人工短验收已通过。验收记录见
 [`elysia-m2-4-acceptance.md`](elysia-m2-4-acceptance.md)。
 
