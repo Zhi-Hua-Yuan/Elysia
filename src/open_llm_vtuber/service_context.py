@@ -1,5 +1,6 @@
 import os
 import json
+from pathlib import Path
 from typing import Callable
 from loguru import logger
 from fastapi import WebSocket
@@ -33,8 +34,15 @@ from .config_manager import (
     TTSConfig,
     VADConfig,
     TranslatorConfig,
+    MemoryConfig,
     read_yaml,
     validate_config,
+)
+from .memory import (
+    MemoryContextRenderer,
+    MemoryScope,
+    PersistentMemoryService,
+    PersistentMemoryStore,
 )
 
 
@@ -42,7 +50,12 @@ class ServiceContext:
     """Initializes, stores, and updates the asr, tts, and llm instances and other
     configurations for a connected client."""
 
-    def __init__(self):
+    def __init__(self, project_root: Path | None = None):
+        self.project_root = (
+            Path(project_root).resolve()
+            if project_root is not None
+            else Path(__file__).resolve().parents[2]
+        )
         self.config: Config = None
         self.system_config: SystemConfig = None
         self.character_config: CharacterConfig = None
@@ -60,6 +73,7 @@ class ServiceContext:
         self.tool_manager: ToolManager | None = None
         self.mcp_client: MCPClient | None = None
         self.tool_executor: ToolExecutor | None = None
+        self.memory_service: PersistentMemoryService | None = None
 
         # the system prompt is a combination of the persona prompt and live2d expression prompt
         self.system_prompt: str = None
@@ -87,6 +101,35 @@ class ServiceContext:
         )
 
     # ==== Initializers
+
+    def _init_memory_service(self, memory_config: MemoryConfig) -> None:
+        """Initialize optional memory infrastructure without blocking startup."""
+        if not memory_config.enabled:
+            self.memory_service = None
+            return
+
+        try:
+            candidate_store = PersistentMemoryStore(
+                project_root=self.project_root,
+                storage_dir=memory_config.storage_dir,
+            )
+            if (
+                self.memory_service is not None
+                and self.memory_service.store.storage_root
+                == candidate_store.storage_root
+            ):
+                return
+
+            self.memory_service = PersistentMemoryService(
+                store=candidate_store,
+                renderer=MemoryContextRenderer(),
+            )
+        except Exception as exc:
+            self.memory_service = None
+            logger.warning(
+                "Persistent memory initialization failed (error_type={})",
+                type(exc).__name__,
+            )
 
     async def _init_mcp_components(self, use_mcpp, enabled_servers):
         """Initializes MCP components based on configuration, dynamically fetching tool info."""
@@ -207,6 +250,7 @@ class ServiceContext:
         translate_engine: TranslateInterface | None,
         mcp_server_registery: ServerRegistry | None = None,
         tool_adapter: ToolAdapter | None = None,
+        memory_service: PersistentMemoryService | None = None,
         send_text: Callable = None,
         client_uid: str = None,
     ) -> None:
@@ -231,6 +275,7 @@ class ServiceContext:
         # Load potentially shared components by reference
         self.mcp_server_registery = mcp_server_registery
         self.tool_adapter = tool_adapter
+        self.memory_service = memory_service
         self.send_text = send_text
         self.client_uid = client_uid
 
@@ -260,6 +305,8 @@ class ServiceContext:
             self.character_config = config.character_config
 
         # update all sub-configs
+
+        self._init_memory_service(config.memory_config)
 
         # init live2d from character config
         self.init_live2d(config.character_config.live2d_model_name)
@@ -387,6 +434,7 @@ class ServiceContext:
                 tool_manager=self.tool_manager,
                 tool_executor=self.tool_executor,
                 mcp_prompt_string=self.mcp_prompt,
+                persistent_memory_context_provider=(self.get_persistent_memory_context),
             )
 
             logger.debug(f"Agent choice: {agent_config.conversation_agent_choice}")
@@ -428,6 +476,58 @@ class ServiceContext:
             logger.info("Translation already initialized with the same config.")
 
     # ==== utils
+
+    async def get_persistent_memory_context(
+        self,
+        *,
+        group_conversation: bool = False,
+        force_reload: bool = False,
+    ) -> str:
+        """Return a safe context for the current scope or fail closed to empty."""
+        if (
+            self.config is None
+            or self.character_config is None
+            or self.system_config is None
+            or self.memory_service is None
+        ):
+            return ""
+
+        memory_config = self.config.memory_config
+        if (
+            not memory_config.enabled
+            or group_conversation
+            or getattr(self.system_config, "enable_proxy", False)
+            or self.character_config.agent_config.conversation_agent_choice
+            != "basic_memory_agent"
+        ):
+            return ""
+
+        try:
+            scope = MemoryScope(
+                profile_id=memory_config.profile_id,
+                character_conf_uid=self.character_config.conf_uid,
+            )
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "Persistent memory scope is invalid (error_type={})",
+                type(exc).__name__,
+            )
+            return ""
+
+        try:
+            return await self.memory_service.render_context(
+                scope,
+                max_item_chars=memory_config.max_item_chars,
+                max_context_chars=memory_config.max_context_chars,
+                force_reload=force_reload,
+            )
+        except Exception as exc:
+            self.memory_service.mark_unavailable(scope)
+            logger.warning(
+                "Persistent memory unavailable for current scope (error_type={})",
+                type(exc).__name__,
+            )
+            return ""
 
     async def construct_system_prompt(self, persona_prompt: str) -> str:
         """
@@ -506,6 +606,9 @@ class ServiceContext:
                     "system_config": self.system_config.model_dump(),
                     "character_config": new_character_config_data,
                 }
+                if self.config is not None:
+                    new_config["live_config"] = self.config.live_config.model_dump()
+                    new_config["memory_config"] = self.config.memory_config.model_dump()
                 new_config = validate_config(new_config)
                 await self.load_from_config(new_config)  # Await the async load
                 logger.debug("New configuration loaded: {}", self)
@@ -546,8 +649,7 @@ class ServiceContext:
                     {
                         "type": "error",
                         "message": (
-                            "Error switching configuration "
-                            f"(error_type={error_type})"
+                            f"Error switching configuration (error_type={error_type})"
                         ),
                     }
                 )

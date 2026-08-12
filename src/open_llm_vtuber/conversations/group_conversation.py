@@ -246,11 +246,13 @@ async def handle_group_member_turn(
     new_messages = state.conversation_history[state.memory_index[current_member_uid] :]
     new_context = "\n".join(new_messages) if new_messages else ""
 
+    group_metadata = dict(metadata or {})
+    group_metadata["group_conversation"] = True
     batch_input = create_batch_input(
         input_text=new_context,
         images=images,
         from_name="Human",
-        metadata=metadata,
+        metadata=group_metadata,
     )
 
     logger.info(

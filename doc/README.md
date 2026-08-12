@@ -5,6 +5,13 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 
 ## MVP baseline notes
 
+- The completed M5.2 local storage and dynamic context injection acceptance is
+  maintained in
+  [`elysia-m5-2-acceptance.md`](elysia-m5-2-acceptance.md).
+
+- The frozen M5 lightweight persistent-memory design is maintained in
+  [`elysia-m5-lightweight-persistent-memory-design.md`](elysia-m5-lightweight-persistent-memory-design.md).
+
 - The current M3.4 Fish-default software RC setup, smoke test, fallback, and
   troubleshooting guide is maintained in
   [`elysia-software-rc-runbook.md`](elysia-software-rc-runbook.md).

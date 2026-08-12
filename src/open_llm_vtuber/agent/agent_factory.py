@@ -66,6 +66,9 @@ class AgentFactory:
             tool_manager: Optional[ToolManager] = kwargs.get("tool_manager")
             tool_executor: Optional[ToolExecutor] = kwargs.get("tool_executor")
             mcp_prompt_string: str = kwargs.get("mcp_prompt_string", "")
+            persistent_memory_context_provider = kwargs.get(
+                "persistent_memory_context_provider"
+            )
 
             # Create the agent with the LLM and live2d_model
             return BasicMemoryAgent(
@@ -83,6 +86,7 @@ class AgentFactory:
                 tool_manager=tool_manager,
                 tool_executor=tool_executor,
                 mcp_prompt_string=mcp_prompt_string,
+                persistent_memory_context_provider=(persistent_memory_context_provider),
             )
 
         elif conversation_agent_choice == "mem0_agent":

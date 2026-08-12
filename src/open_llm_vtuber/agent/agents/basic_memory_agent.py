@@ -1,5 +1,6 @@
 from typing import (
     AsyncIterator,
+    Awaitable,
     List,
     Dict,
     Any,
@@ -49,6 +50,9 @@ class BasicMemoryAgent(AgentInterface):
         tool_manager: Optional[ToolManager] = None,
         tool_executor: Optional[ToolExecutor] = None,
         mcp_prompt_string: str = "",
+        persistent_memory_context_provider: Optional[
+            Callable[..., Awaitable[str]]
+        ] = None,
     ):
         """Initialize agent with LLM and configuration."""
         super().__init__()
@@ -66,6 +70,7 @@ class BasicMemoryAgent(AgentInterface):
         self._tool_manager = tool_manager
         self._tool_executor = tool_executor
         self._mcp_prompt_string = mcp_prompt_string
+        self._persistent_memory_context_provider = persistent_memory_context_provider
         self._json_detector = StreamJSONDetector()
 
         self._formatted_tools_openai = []
@@ -124,6 +129,47 @@ class BasicMemoryAgent(AgentInterface):
             system = f"{system}\n\nIf you received `[interrupted by user]` signal, you were interrupted."
 
         self._system = system
+
+    async def _get_persistent_memory_context(
+        self,
+        input_data: BatchInput,
+    ) -> str:
+        """Load optional per-turn context while failing closed on provider errors."""
+        if self._persistent_memory_context_provider is None:
+            return ""
+
+        group_conversation = bool(
+            input_data.metadata and input_data.metadata.get("group_conversation", False)
+        )
+        try:
+            context = await self._persistent_memory_context_provider(
+                group_conversation=group_conversation
+            )
+        except Exception as exc:
+            logger.warning(
+                "Persistent memory context provider failed (error_type={})",
+                type(exc).__name__,
+            )
+            return ""
+
+        if not isinstance(context, str):
+            logger.warning("Persistent memory context provider returned invalid data")
+            return ""
+        return context
+
+    def _compose_system_prompt(
+        self,
+        *,
+        memory_context: str = "",
+        extra_prompt: str = "",
+    ) -> str:
+        """Compose a per-call prompt without mutating the agent's base prompt."""
+        prompt_parts = [self._system]
+        if extra_prompt:
+            prompt_parts.append(extra_prompt)
+        if memory_context:
+            prompt_parts.append(memory_context)
+        return "\n\n".join(prompt_parts)
 
     def _add_message(
         self,
@@ -291,6 +337,7 @@ class BasicMemoryAgent(AgentInterface):
         self,
         initial_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
+        memory_context: str = "",
     ) -> AsyncIterator[Union[str, Dict[str, Any]]]:
         """Handle Claude interaction loop with tool support."""
         messages = initial_messages.copy()
@@ -299,7 +346,11 @@ class BasicMemoryAgent(AgentInterface):
         current_assistant_message_content = []
 
         while True:
-            stream = self._llm.chat_completion(messages, self._system, tools=tools)
+            stream = self._llm.chat_completion(
+                messages,
+                self._compose_system_prompt(memory_context=memory_context),
+                tools=tools,
+            )
             pending_tool_calls.clear()
             current_assistant_message_content.clear()
 
@@ -404,25 +455,33 @@ class BasicMemoryAgent(AgentInterface):
         self,
         initial_messages: List[Dict[str, Any]],
         tools: List[Dict[str, Any]],
+        memory_context: str = "",
     ) -> AsyncIterator[Union[str, Dict[str, Any]]]:
         """Handle OpenAI interaction with tool support."""
         messages = initial_messages.copy()
         current_turn_text = ""
         pending_tool_calls: Union[List[ToolCallObject], List[Dict[str, Any]]] = []
-        current_system_prompt = self._system
+        current_system_prompt = self._compose_system_prompt(
+            memory_context=memory_context
+        )
 
         while True:
             if self.prompt_mode_flag:
                 if self._mcp_prompt_string:
-                    current_system_prompt = (
-                        f"{self._system}\n\n{self._mcp_prompt_string}"
+                    current_system_prompt = self._compose_system_prompt(
+                        extra_prompt=self._mcp_prompt_string,
+                        memory_context=memory_context,
                     )
                 else:
                     logger.warning("Prompt mode active but mcp_prompt_string is empty!")
-                    current_system_prompt = self._system
+                    current_system_prompt = self._compose_system_prompt(
+                        memory_context=memory_context
+                    )
                 tools_for_api = None
             else:
-                current_system_prompt = self._system
+                current_system_prompt = self._compose_system_prompt(
+                    memory_context=memory_context
+                )
                 tools_for_api = tools
 
             stream = self._llm.chat_completion(
@@ -599,6 +658,7 @@ class BasicMemoryAgent(AgentInterface):
             self.prompt_mode_flag = False
 
             messages = self._to_messages(input_data)
+            memory_context = await self._get_persistent_memory_context(input_data)
             tools = None
             tool_mode = None
             llm_supports_native_tools = False
@@ -628,7 +688,9 @@ class BasicMemoryAgent(AgentInterface):
                     f"Starting Claude tool interaction loop with {len(tools)} tools."
                 )
                 async for output in self._claude_tool_interaction_loop(
-                    messages, tools if tools else []
+                    messages,
+                    tools if tools else [],
+                    memory_context=memory_context,
                 ):
                     yield output
                 return
@@ -637,13 +699,18 @@ class BasicMemoryAgent(AgentInterface):
                     f"Starting OpenAI tool interaction loop with {len(tools)} tools."
                 )
                 async for output in self._openai_tool_interaction_loop(
-                    messages, tools if tools else []
+                    messages,
+                    tools if tools else [],
+                    memory_context=memory_context,
                 ):
                     yield output
                 return
             else:
                 logger.info("Starting simple chat completion.")
-                token_stream = self._llm.chat_completion(messages, self._system)
+                token_stream = self._llm.chat_completion(
+                    messages,
+                    self._compose_system_prompt(memory_context=memory_context),
+                )
                 complete_response = ""
                 async for event in token_stream:
                     text_chunk = ""
