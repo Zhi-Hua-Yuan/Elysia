@@ -1,3 +1,5 @@
+import os
+import re
 from typing import Literal
 
 import httpx
@@ -10,6 +12,7 @@ class TTSEngine(TTSInterface):
     """Fish Audio TTS client using the current HTTP API."""
 
     file_extension: str = "wav"
+    _ENV_PLACEHOLDER = re.compile(r"\$\{\w+\}")
 
     def __init__(
         self,
@@ -19,8 +22,11 @@ class TTSEngine(TTSInterface):
         base_url: str = "https://api.fish.audio",
         model: str = "s2.1-pro-free",
     ):
-        if not api_key:
-            raise ValueError("Fish Audio API key is required")
+        if not api_key or self._ENV_PLACEHOLDER.fullmatch(api_key.strip()):
+            raise ValueError(
+                "Fish Audio API key is required; set the configured environment "
+                "variable before starting the server"
+            )
         if not reference_id:
             raise ValueError("Fish Audio reference_id is required")
 
@@ -48,8 +54,6 @@ class TTSEngine(TTSInterface):
         return len(audio) >= 12 and audio[:4] == b"RIFF" and audio[8:12] == b"WAVE"
 
     def generate_audio(self, text: str, file_name_no_ext=None):
-        file_name = self.generate_cache_file_name(file_name_no_ext, self.file_extension)
-
         logger.debug(
             "Fish TTS request summary "
             "(text_chars={}, model={}, reference_id={}, latency={})",
@@ -59,6 +63,7 @@ class TTSEngine(TTSInterface):
             self.latency,
         )
 
+        temporary_file_name = None
         try:
             response = self.client.post(
                 "v1/tts",
@@ -93,8 +98,13 @@ class TTSEngine(TTSInterface):
                 )
                 return None
 
-            with open(file_name, "wb") as audio_file:
+            file_name = self.generate_cache_file_name(
+                file_name_no_ext, self.file_extension
+            )
+            temporary_file_name = f"{file_name}.part"
+            with open(temporary_file_name, "wb") as audio_file:
                 audio_file.write(response.content)
+            os.replace(temporary_file_name, file_name)
             return file_name
         except httpx.TimeoutException:
             logger.error("Fish TTS API request timed out")
@@ -108,5 +118,14 @@ class TTSEngine(TTSInterface):
                 "Fish TTS audio generation failed (error_type={})",
                 type(exc).__name__,
             )
+        finally:
+            if temporary_file_name and os.path.exists(temporary_file_name):
+                try:
+                    os.remove(temporary_file_name)
+                except OSError as exc:
+                    logger.warning(
+                        "Fish TTS temporary file cleanup failed (error_type={})",
+                        type(exc).__name__,
+                    )
 
         return None

@@ -96,7 +96,7 @@ class ElysiaPersonaTemplateTests(unittest.TestCase):
         self.assertEqual(agent_config.conversation_agent_choice, "basic_memory_agent")
         self.assertFalse(agent_config.agent_settings.basic_memory_agent.use_mcpp)
         self.assertEqual(self.character.asr_config.asr_model, "sherpa_onnx_asr")
-        self.assertEqual(tts_config.tts_model, "sherpa_onnx_tts")
+        self.assertEqual(tts_config.tts_model, "fish_api_tts")
         self.assertEqual(tts_config.fish_api_tts.model, "s2.1-pro-free")
         self.assertEqual(
             tts_config.fish_api_tts.reference_id,

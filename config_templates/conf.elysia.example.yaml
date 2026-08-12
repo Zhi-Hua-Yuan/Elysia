@@ -87,9 +87,10 @@ character_config:
       provider: 'cpu'
 
   tts_config:
-    # MVP-A 默认使用 M0 已验收的 Sherpa-ONNX 本地通用女声。
-    # 该声音只用于验证语音链路，不代表最终爱莉希雅音色。
-    tts_model: 'sherpa_onnx_tts'
+    # M3.3 默认使用 Fish Audio 在线候选角色音色。
+    # Fish 需要网络与 ELYSIA_FISH_API_KEY；授权状态仍需与技术验收分开记录。
+    # 网络、额度或服务异常时，手动切换为 sherpa_onnx_tts 本地回退。
+    tts_model: 'fish_api_tts'
     sherpa_onnx_tts:
       vits_model: 'models/vits-melo-tts-zh_en/model.onnx'
       vits_lexicon: 'models/vits-melo-tts-zh_en/lexicon.txt'
@@ -106,7 +107,7 @@ character_config:
     # Edge TTS 是需要网络连接的在线回退，不是本地离线 TTS。
     edge_tts:
       voice: 'zh-CN-XiaoxiaoNeural'
-    # M3 在线音色候选。仅在本地确认来源与使用范围后启用；默认仍使用 Sherpa。
+    # M3 在线音色候选。默认启用不代表声音资产授权已经通过。
     fish_api_tts:
       api_key: '${ELYSIA_FISH_API_KEY}'
       reference_id: 'aca922eff5f0446fbfd395fe03e48f35'

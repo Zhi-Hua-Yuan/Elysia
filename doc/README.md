@@ -15,6 +15,10 @@ For full documentation, please visit our [documentation site](https://open-llm-v
   maintained in
   [`elysia-m3-fish-tts-acceptance.md`](elysia-m3-fish-tts-acceptance.md).
 
+- The M3.3 Fish-default software baseline and pending manual checklist are
+  maintained in
+  [`elysia-m3-3-acceptance.md`](elysia-m3-3-acceptance.md).
+
 - The current Elysia project status and milestone plan is maintained in
   [`elysia-project-progress.md`](elysia-project-progress.md).
 

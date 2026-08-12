@@ -68,9 +68,14 @@ def validate_config(config_data: dict) -> Config:
     try:
         return Config(**config_data)
     except ValidationError as e:
-        logger.critical(f"Error validating configuration: {e}")
-        logger.error("Configuration data:")
-        logger.error(config_data)
+        issues = [
+            {
+                "location": ".".join(str(part) for part in error["loc"]),
+                "type": error["type"],
+            }
+            for error in e.errors(include_url=False, include_input=False)
+        ]
+        logger.critical("Configuration validation failed (issues={})", issues)
         raise e
 
 
