@@ -143,6 +143,20 @@ class ServiceContext:
                 type(exc).__name__,
             )
 
+    def apply_memory_enabled_state(self, *, enabled: bool) -> None:
+        """Apply only the runtime memory switch without rebuilding dependencies."""
+        if type(enabled) is not bool:
+            raise TypeError("enabled must be a boolean")
+
+        memory_config = getattr(self.config, "memory_config", None)
+        if memory_config is None:
+            raise RuntimeError("memory configuration is unavailable")
+        memory_config.enabled = enabled
+
+    def clear_memory_setting_transients(self) -> None:
+        """Clear pending confirmations while preserving any in-flight turn marker."""
+        self.memory_command_controller.clear_pending()
+
     async def handle_memory_management_request(
         self,
         request: MemoryManagementRequest,

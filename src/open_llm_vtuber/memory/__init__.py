@@ -108,6 +108,11 @@ from .management_transport import (
     serialize_memory_management_response,
 )
 from .setting_persistence import AtomicConfigWriteResult, AtomicMemoryConfigWriter
+from .setting_coordinator import (
+    MemorySettingPersistencePort,
+    MemorySettingRuntimeCoordinator,
+    MemorySettingRuntimeTarget,
+)
 
 __all__ = [
     "MemoryAction",
@@ -196,4 +201,7 @@ __all__ = [
     "serialize_memory_management_response",
     "AtomicConfigWriteResult",
     "AtomicMemoryConfigWriter",
+    "MemorySettingPersistencePort",
+    "MemorySettingRuntimeCoordinator",
+    "MemorySettingRuntimeTarget",
 ]
