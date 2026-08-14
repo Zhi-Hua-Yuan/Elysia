@@ -75,6 +75,7 @@ class ServiceContext:
         self.asr_engine: ASRInterface = None
         self.tts_engine: TTSInterface = None
         self.agent_engine: AgentInterface = None
+        self._owns_agent_engine = False
         # translate_engine can be none if translation is disabled
         self.vad_engine: VADInterface | None = None
         self.translate_engine: TranslateInterface | None = None
@@ -309,8 +310,16 @@ class ServiceContext:
             logger.info(f"Closing MCPClient for context instance {id(self)}...")
             await self.mcp_client.aclose()
             self.mcp_client = None
-        if self.agent_engine and hasattr(self.agent_engine, "close"):
-            await self.agent_engine.close()  # Ensure agent resources are also closed
+        agent_engine = self.agent_engine
+        self.agent_engine = None
+        owns_agent_engine = self._owns_agent_engine
+        self._owns_agent_engine = False
+        if (
+            owns_agent_engine
+            and agent_engine is not None
+            and hasattr(agent_engine, "close")
+        ):
+            await agent_engine.close()
         logger.info("ServiceContext closed.")
 
     async def load_cache(
@@ -347,6 +356,7 @@ class ServiceContext:
         self.tts_engine = tts_engine
         self.vad_engine = vad_engine
         self.agent_engine = agent_engine
+        self._owns_agent_engine = False
         self.translate_engine = translate_engine
         # Load potentially shared components by reference
         self.mcp_server_registery = mcp_server_registery
@@ -512,6 +522,7 @@ class ServiceContext:
                 mcp_prompt_string=self.mcp_prompt,
                 persistent_memory_context_provider=(self.get_persistent_memory_context),
             )
+            self._owns_agent_engine = True
 
             logger.debug(f"Agent choice: {agent_config.conversation_agent_choice}")
             logger.debug("System prompt constructed (chars={})", len(system_prompt))

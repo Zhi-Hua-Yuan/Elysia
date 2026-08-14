@@ -80,9 +80,9 @@ class WebSocketHandler:
         self.chat_group_manager = ChatGroupManager()
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
         self.default_context_cache = default_context_cache
-        self._memory_setting_coordinator: Optional[
-            MemorySettingRuntimeCoordinator
-        ] = None
+        self._memory_setting_coordinator: Optional[MemorySettingRuntimeCoordinator] = (
+            None
+        )
         self.received_data_buffers: Dict[str, np.ndarray] = {}
         self.conversation_started_at: Dict[str, tuple[float, str, str]] = {}
 
@@ -162,9 +162,14 @@ class WebSocketHandler:
 
             logger.info(f"Connection established for client {client_uid}")
 
-        except Exception as e:
+        except asyncio.CancelledError:
+            await self._cleanup_failed_connection(client_uid)
+            raise
+        except Exception as exc:
             logger.error(
-                f"Failed to initialize connection for client {client_uid}: {e}"
+                "Failed to initialize connection (client_uid={}, error_type={})",
+                client_uid,
+                type(exc).__name__,
             )
             await self._cleanup_failed_connection(client_uid)
             raise
@@ -216,28 +221,41 @@ class WebSocketHandler:
         self, send_text: Callable, client_uid: str
     ) -> ServiceContext:
         """Initialize service context for a new session by cloning the default context"""
+        coordinator = self._memory_setting_coordinator
+        if coordinator is None:
+            raise RuntimeError("memory setting runtime is not initialized")
+
         session_service_context = ServiceContext()
-        await session_service_context.load_cache(
-            config=self.default_context_cache.config.model_copy(deep=True),
-            system_config=self.default_context_cache.system_config.model_copy(
-                deep=True
-            ),
-            character_config=self.default_context_cache.character_config.model_copy(
-                deep=True
-            ),
-            live2d_model=self.default_context_cache.live2d_model,
-            asr_engine=self.default_context_cache.asr_engine,
-            tts_engine=self.default_context_cache.tts_engine,
-            vad_engine=self.default_context_cache.vad_engine,
-            agent_engine=self.default_context_cache.agent_engine,
-            translate_engine=self.default_context_cache.translate_engine,
-            mcp_server_registery=self.default_context_cache.mcp_server_registery,
-            tool_adapter=self.default_context_cache.tool_adapter,
-            memory_service=self.default_context_cache.memory_service,
-            send_text=send_text,
-            client_uid=client_uid,
-        )
-        return session_service_context
+        try:
+            await session_service_context.load_cache(
+                config=self.default_context_cache.config.model_copy(deep=True),
+                system_config=self.default_context_cache.system_config.model_copy(
+                    deep=True
+                ),
+                character_config=(
+                    self.default_context_cache.character_config.model_copy(deep=True)
+                ),
+                live2d_model=self.default_context_cache.live2d_model,
+                asr_engine=self.default_context_cache.asr_engine,
+                tts_engine=self.default_context_cache.tts_engine,
+                vad_engine=self.default_context_cache.vad_engine,
+                agent_engine=self.default_context_cache.agent_engine,
+                translate_engine=self.default_context_cache.translate_engine,
+                mcp_server_registery=(self.default_context_cache.mcp_server_registery),
+                tool_adapter=self.default_context_cache.tool_adapter,
+                memory_service=self.default_context_cache.memory_service,
+                send_text=send_text,
+                client_uid=client_uid,
+            )
+            session_service_context.bind_memory_setting_update_port(coordinator)
+            await coordinator.register_target(session_service_context)
+            return session_service_context
+        except asyncio.CancelledError:
+            await self._release_session_context(session_service_context)
+            raise
+        except Exception:
+            await self._release_session_context(session_service_context)
+            raise
 
     async def handle_websocket_communication(
         self, websocket: WebSocket, client_uid: str
@@ -390,47 +408,44 @@ class WebSocketHandler:
 
     async def handle_disconnect(self, client_uid: str) -> None:
         """Handle client disconnection"""
-        group = self.chat_group_manager.get_client_group(client_uid)
-        if group:
-            await handle_group_interrupt(
-                group_id=group.group_id,
-                heard_response="",
-                current_conversation_tasks=self.current_conversation_tasks,
+        try:
+            group = self.chat_group_manager.get_client_group(client_uid)
+            if group:
+                await handle_group_interrupt(
+                    group_id=group.group_id,
+                    heard_response="",
+                    current_conversation_tasks=self.current_conversation_tasks,
+                    chat_group_manager=self.chat_group_manager,
+                    client_contexts=self.client_contexts,
+                    broadcast_to_group=self.broadcast_to_group,
+                )
+
+            await handle_client_disconnect(
+                client_uid=client_uid,
                 chat_group_manager=self.chat_group_manager,
-                client_contexts=self.client_contexts,
-                broadcast_to_group=self.broadcast_to_group,
+                client_connections=self.client_connections,
+                send_group_update=self.send_group_update,
             )
+        finally:
+            context = self._detach_client_data(client_uid)
+            if context is not None:
+                await self._release_session_context(context)
 
-        await handle_client_disconnect(
-            client_uid=client_uid,
-            chat_group_manager=self.chat_group_manager,
-            client_connections=self.client_connections,
-            send_group_update=self.send_group_update,
-        )
-
-        # Clean up other client data
-        self.client_connections.pop(client_uid, None)
-        self.client_contexts.pop(client_uid, None)
-        self.received_data_buffers.pop(client_uid, None)
-        self.conversation_started_at.pop(client_uid, None)
-        if client_uid in self.current_conversation_tasks:
-            task = self.current_conversation_tasks[client_uid]
-            if task and not task.done():
-                task.cancel()
-            self.current_conversation_tasks.pop(client_uid, None)
-
-        # Call context close to clean up resources (e.g., MCPClient)
-        context = self.client_contexts.get(client_uid)
-        if context:
-            await context.close()
-
-        logger.info(f"Client {client_uid} disconnected")
-        message_handler.cleanup_client(client_uid)
+            logger.info(f"Client {client_uid} disconnected")
+            message_handler.cleanup_client(client_uid)
 
     async def _cleanup_failed_connection(self, client_uid: str) -> None:
         """Clean up failed connection data"""
+        context = self._detach_client_data(client_uid)
+        if context is not None:
+            await self._release_session_context(context)
+
+        message_handler.cleanup_client(client_uid)
+
+    def _detach_client_data(self, client_uid: str) -> Optional[ServiceContext]:
+        """Detach one session from handler-owned maps and return its context."""
         self.client_connections.pop(client_uid, None)
-        self.client_contexts.pop(client_uid, None)
+        context = self.client_contexts.pop(client_uid, None)
         self.received_data_buffers.pop(client_uid, None)
         self.conversation_started_at.pop(client_uid, None)
         self.chat_group_manager.client_group_map.pop(client_uid, None)
@@ -441,7 +456,27 @@ class WebSocketHandler:
                 task.cancel()
             self.current_conversation_tasks.pop(client_uid, None)
 
-        message_handler.cleanup_client(client_uid)
+        return context
+
+    async def _release_session_context(self, context: ServiceContext) -> None:
+        """Unregister and close one session without blocking the rest of cleanup."""
+        coordinator = self._memory_setting_coordinator
+        if coordinator is not None:
+            try:
+                await coordinator.unregister_target(context)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to unregister memory runtime target (error_type={})",
+                    type(exc).__name__,
+                )
+
+        try:
+            await context.close()
+        except Exception as exc:
+            logger.warning(
+                "Failed to close session context (error_type={})",
+                type(exc).__name__,
+            )
 
     async def broadcast_to_group(
         self, group_members: list[str], message: dict, exclude_uid: str = None
