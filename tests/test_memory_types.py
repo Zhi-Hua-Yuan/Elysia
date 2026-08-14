@@ -8,6 +8,8 @@ from open_llm_vtuber.memory import (
     MemoryCategory,
     MemoryDocument,
     MemoryItem,
+    MemoryListResult,
+    MemoryMutationResult,
     MemoryOperationResult,
     MemoryOperationStatus,
     MemoryReasonCode,
@@ -216,4 +218,62 @@ def test_unsuccessful_result_requires_stable_reason_code() -> None:
         MemoryOperationResult(
             status=MemoryOperationStatus.FAILED,
             action=MemoryAction.CLEAR,
+        )
+
+
+def test_mutation_result_separates_idempotence_from_failure() -> None:
+    unchanged = MemoryMutationResult(
+        operation=MemoryOperationResult(
+            status=MemoryOperationStatus.SUCCESS,
+            action=MemoryAction.UPDATE,
+            memory_id=MEMORY_ID,
+            revision=3,
+        ),
+        changed=False,
+        item_count=1,
+    )
+
+    assert not unchanged.changed
+    with pytest.raises(ValidationError):
+        MemoryMutationResult(
+            operation=MemoryOperationResult(
+                status=MemoryOperationStatus.REJECTED,
+                action=MemoryAction.DELETE,
+                reason_code=MemoryReasonCode.NOT_FOUND,
+            ),
+            changed=True,
+            item_count=1,
+        )
+    with pytest.raises(ValidationError):
+        MemoryMutationResult(
+            operation=MemoryOperationResult(
+                status=MemoryOperationStatus.SUCCESS,
+                action=MemoryAction.LIST,
+                revision=3,
+            ),
+            changed=False,
+            item_count=1,
+        )
+
+
+def test_list_result_requires_list_operation_and_hides_items_on_failure() -> None:
+    item = make_item()
+    listed = MemoryListResult(
+        operation=MemoryOperationResult(
+            status=MemoryOperationStatus.SUCCESS,
+            action=MemoryAction.LIST,
+            revision=1,
+        ),
+        items=(item,),
+    )
+
+    assert listed.items == (item,)
+    with pytest.raises(ValidationError):
+        MemoryListResult(
+            operation=MemoryOperationResult(
+                status=MemoryOperationStatus.FAILED,
+                action=MemoryAction.LIST,
+                reason_code=MemoryReasonCode.STORAGE_FAILURE,
+            ),
+            items=(item,),
         )

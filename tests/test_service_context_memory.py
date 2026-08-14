@@ -282,6 +282,8 @@ def test_config_switch_preserves_memory_and_live_configuration(tmp_path: Path) -
     )
     context.live2d_model = SimpleNamespace(model_info={"name": "mao_pro"})
     context.load_from_config = AsyncMock()
+    context.memory_command_controller.clear_pending = Mock()
+    context.active_memory_command_turn_id = "pending-memory-turn"
     websocket = AsyncMock()
     captured: dict = {}
 
@@ -304,3 +306,5 @@ def test_config_switch_preserves_memory_and_live_configuration(tmp_path: Path) -
     assert captured["live_config"] == {"bilibili_live": {}}
     assert captured["memory_config"]["enabled"] is True
     assert captured["memory_config"]["profile_id"] == "local_default"
+    context.memory_command_controller.clear_pending.assert_called_once_with()
+    assert context.active_memory_command_turn_id is None

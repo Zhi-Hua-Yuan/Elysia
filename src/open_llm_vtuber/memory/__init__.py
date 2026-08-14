@@ -5,6 +5,8 @@ from .types import (
     MemoryCategory,
     MemoryDocument,
     MemoryItem,
+    MemoryListResult,
+    MemoryMutationResult,
     MemoryOperationResult,
     MemoryOperationStatus,
     MemoryReasonCode,
@@ -13,6 +15,7 @@ from .types import (
 )
 from .store import (
     MAX_MEMORY_FILE_BYTES,
+    MemoryBackupMode,
     MemoryStoreError,
     MemoryStorePathError,
     MemoryStoreReadError,
@@ -30,18 +33,54 @@ from .context_renderer import (
     render_memory_context,
 )
 from .service import PersistentMemoryService
+from .normalization import normalize_memory_match_text, normalize_memory_text
+from .command_types import (
+    MemoryCommand,
+    MemoryCommandKind,
+    MemoryCommandParseReason,
+    MemoryCommandParseResult,
+    MemoryCommandParseStatus,
+    MemoryPolicyDecision,
+    PendingMemoryConfirmation,
+)
+from .command_parser import (
+    DEFAULT_MAX_COMMAND_CHARS,
+    MemoryCommandParser,
+    parse_memory_command,
+)
+from .content_policy import (
+    MAX_PREFERRED_ADDRESS_CHARS,
+    MemoryContentPolicy,
+    evaluate_memory_content,
+)
+from .feedback import (
+    DEFAULT_LIST_FEEDBACK_CHARS,
+    DEFAULT_LIST_FEEDBACK_ITEMS,
+    feedback_for_list,
+    feedback_for_parse_failure,
+    feedback_for_reason,
+    feedback_for_success,
+)
+from .command_controller import (
+    DEFAULT_CLEAR_CONFIRMATION_SECONDS,
+    ExplicitMemoryCommandController,
+    MemoryCommandExecutionResult,
+)
 
 __all__ = [
     "MemoryAction",
     "MemoryCategory",
     "MemoryDocument",
     "MemoryItem",
+    "MemoryListResult",
+    "MemoryMutationResult",
     "MemoryOperationResult",
     "MemoryOperationStatus",
     "MemoryReasonCode",
     "MemoryScope",
     "MemorySource",
     "MAX_MEMORY_FILE_BYTES",
+    "MemoryBackupMode",
     "MemoryStoreError",
     "MemoryStorePathError",
     "MemoryStoreReadError",
@@ -56,4 +95,28 @@ __all__ = [
     "MemoryContextRenderer",
     "render_memory_context",
     "PersistentMemoryService",
+    "normalize_memory_match_text",
+    "normalize_memory_text",
+    "MemoryCommand",
+    "MemoryCommandKind",
+    "MemoryCommandParseReason",
+    "MemoryCommandParseResult",
+    "MemoryCommandParseStatus",
+    "MemoryPolicyDecision",
+    "PendingMemoryConfirmation",
+    "DEFAULT_MAX_COMMAND_CHARS",
+    "MemoryCommandParser",
+    "parse_memory_command",
+    "MAX_PREFERRED_ADDRESS_CHARS",
+    "MemoryContentPolicy",
+    "evaluate_memory_content",
+    "DEFAULT_LIST_FEEDBACK_CHARS",
+    "DEFAULT_LIST_FEEDBACK_ITEMS",
+    "feedback_for_list",
+    "feedback_for_parse_failure",
+    "feedback_for_reason",
+    "feedback_for_success",
+    "DEFAULT_CLEAR_CONFIRMATION_SECONDS",
+    "ExplicitMemoryCommandController",
+    "MemoryCommandExecutionResult",
 ]

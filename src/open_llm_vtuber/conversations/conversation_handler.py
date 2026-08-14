@@ -83,9 +83,7 @@ async def handle_conversation_trigger(
         user_input = received_data_buffers[client_uid]
         received_data_buffers[client_uid] = np.array([])
 
-    images = _filter_images_for_character(
-        data.get("images"), context.character_config
-    )
+    images = _filter_images_for_character(data.get("images"), context.character_config)
     session_emoji = np.random.choice(EMOJI_LIST)
 
     group = chat_group_manager.get_client_group(client_uid)
@@ -138,16 +136,22 @@ async def handle_individual_interrupt(
     context: ServiceContext,
     heard_response: str,
 ):
+    memory_command_active = (
+        getattr(context, "active_memory_command_turn_id", None) is not None
+    )
     if client_uid in current_conversation_tasks:
         task = current_conversation_tasks[client_uid]
         if task and not task.done():
             task.cancel()
             logger.info("🛑 Conversation task was successfully interrupted")
 
-        try:
-            context.agent_engine.handle_interrupt(heard_response)
-        except Exception as e:
-            logger.error(f"Error handling interrupt: {e}")
+        if not memory_command_active:
+            try:
+                context.agent_engine.handle_interrupt(heard_response)
+            except Exception as e:
+                logger.error(f"Error handling interrupt: {e}")
+        else:
+            logger.debug("Skipped Agent interrupt state for memory command feedback")
 
         if context.history_uid:
             store_message(

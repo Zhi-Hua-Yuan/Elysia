@@ -104,6 +104,9 @@ class MemoryReasonCode(str, Enum):
     AMBIGUOUS_MATCH = "ambiguous_match"
     REVISION_CONFLICT = "revision_conflict"
     STORAGE_FAILURE = "storage_failure"
+    CONFIRMATION_REQUIRED = "confirmation_required"
+    CONFIRMATION_EXPIRED = "confirmation_expired"
+    CONFIRMATION_NOT_PENDING = "confirmation_not_pending"
 
 
 class MemoryScope(BaseModel):
@@ -235,4 +238,35 @@ class MemoryOperationResult(BaseModel):
                 raise ValueError("successful item operations must include memory_id")
         elif self.reason_code is None:
             raise ValueError("unsuccessful operations must include a reason code")
+        return self
+
+
+class MemoryMutationResult(BaseModel):
+    """Business mutation outcome without persisted memory text."""
+
+    operation: MemoryOperationResult
+    changed: bool
+    item_count: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_mutation_result(self) -> "MemoryMutationResult":
+        if self.operation.action == MemoryAction.LIST:
+            raise ValueError("mutation results cannot contain list operations")
+        if self.changed and self.operation.status != MemoryOperationStatus.SUCCESS:
+            raise ValueError("only successful mutations can report a change")
+        return self
+
+
+class MemoryListResult(BaseModel):
+    """Internal list snapshot; callers must not serialize it without filtering."""
+
+    operation: MemoryOperationResult
+    items: tuple[MemoryItem, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_list_result(self) -> "MemoryListResult":
+        if self.operation.action != MemoryAction.LIST:
+            raise ValueError("list results require a list operation")
+        if self.operation.status != MemoryOperationStatus.SUCCESS and self.items:
+            raise ValueError("failed list operations must not contain memory items")
         return self

@@ -39,10 +39,15 @@ from .config_manager import (
     validate_config,
 )
 from .memory import (
+    ExplicitMemoryCommandController,
     MemoryContextRenderer,
+    MemoryCommandExecutionResult,
+    MemoryOperationStatus,
+    MemoryReasonCode,
     MemoryScope,
     PersistentMemoryService,
     PersistentMemoryStore,
+    feedback_for_reason,
 )
 
 
@@ -74,6 +79,8 @@ class ServiceContext:
         self.mcp_client: MCPClient | None = None
         self.tool_executor: ToolExecutor | None = None
         self.memory_service: PersistentMemoryService | None = None
+        self.memory_command_controller = ExplicitMemoryCommandController()
+        self.active_memory_command_turn_id: str | None = None
 
         # the system prompt is a combination of the persona prompt and live2d expression prompt
         self.system_prompt: str = None
@@ -106,6 +113,7 @@ class ServiceContext:
         """Initialize optional memory infrastructure without blocking startup."""
         if not memory_config.enabled:
             self.memory_service = None
+            self.memory_command_controller.clear_pending()
             return
 
         try:
@@ -229,6 +237,8 @@ class ServiceContext:
     async def close(self):
         """Clean up resources, especially the MCPClient."""
         logger.info("Closing ServiceContext resources...")
+        self.memory_command_controller.clear_pending()
+        self.active_memory_command_turn_id = None
         if self.mcp_client:
             logger.info(f"Closing MCPClient for context instance {id(self)}...")
             await self.mcp_client.aclose()
@@ -529,6 +539,64 @@ class ServiceContext:
             )
             return ""
 
+    async def handle_explicit_memory_command(
+        self,
+        text: str,
+        *,
+        metadata: dict | None = None,
+    ) -> MemoryCommandExecutionResult:
+        """Handle one final single-user input before the Agent is called."""
+        if metadata and (
+            metadata.get("skip_memory", False) or metadata.get("proactive_speak", False)
+        ):
+            self.memory_command_controller.clear_pending()
+            return MemoryCommandExecutionResult.not_command()
+
+        if self.config is None or self.character_config is None:
+            self.memory_command_controller.clear_pending()
+            return MemoryCommandExecutionResult.not_command()
+
+        memory_config = self.config.memory_config
+        eligible = bool(
+            self.system_config is not None
+            and not getattr(self.system_config, "enable_proxy", False)
+            and self.character_config.agent_config.conversation_agent_choice
+            == "basic_memory_agent"
+        )
+        try:
+            scope = MemoryScope(
+                profile_id=memory_config.profile_id,
+                character_conf_uid=self.character_config.conf_uid,
+            )
+        except (TypeError, ValueError):
+            scope = None
+
+        try:
+            return await self.memory_command_controller.handle(
+                text,
+                service=self.memory_service,
+                scope=scope,
+                enabled=memory_config.enabled,
+                explicit_capture=memory_config.explicit_capture,
+                eligible=eligible,
+                max_items=memory_config.max_items,
+                max_item_chars=memory_config.max_item_chars,
+            )
+        except Exception as exc:
+            self.memory_command_controller.clear_pending()
+            logger.warning(
+                "Explicit memory command failed safely (error_type={})",
+                type(exc).__name__,
+            )
+            return MemoryCommandExecutionResult(
+                handled=True,
+                status=MemoryOperationStatus.FAILED,
+                reason_code=MemoryReasonCode.STORAGE_FAILURE,
+                changed=False,
+                feedback_text=feedback_for_reason(MemoryReasonCode.STORAGE_FAILURE),
+                expression="neutral",
+            )
+
     async def construct_system_prompt(self, persona_prompt: str) -> str:
         """
         Append tool prompts to persona prompt.
@@ -577,6 +645,8 @@ class ServiceContext:
         - websocket (WebSocket): The WebSocket connection.
         - config_file_name (str): The name of the configuration file.
         """
+        self.memory_command_controller.clear_pending()
+        self.active_memory_command_turn_id = None
         try:
             new_character_config_data = None
 

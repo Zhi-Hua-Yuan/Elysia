@@ -19,7 +19,26 @@ from ..chat_history_manager import store_message
 from ..service_context import ServiceContext
 
 # Import necessary types from agent outputs
-from ..agent.output_types import SentenceOutput, AudioOutput
+from ..agent.output_types import Actions, DisplayText, SentenceOutput, AudioOutput
+
+
+def _memory_feedback_output(
+    context: ServiceContext,
+    *,
+    text: str,
+    expression: str | None,
+) -> SentenceOutput:
+    """Build a deterministic response with a safe model-expression fallback."""
+    actions = Actions()
+    emotion_map = getattr(context.live2d_model, "emo_map", {}) or {}
+    expression_index = emotion_map.get(expression) if expression else None
+    if expression_index is not None:
+        actions.expressions = [expression_index]
+    return SentenceOutput(
+        display_text=DisplayText(text=text),
+        tts_text=text,
+        actions=actions,
+    )
 
 
 async def process_single_conversation(
@@ -70,14 +89,6 @@ async def process_single_conversation(
             turn_id=turn_id,
         )
 
-        # Create batch input
-        batch_input = create_batch_input(
-            input_text=input_text,
-            images=images,
-            from_name=context.character_config.human_name,
-            metadata=metadata,
-        )
-
         # Store user message (check if we should skip storing to history)
         skip_history = metadata and metadata.get("skip_history", False)
         if context.history_uid and not skip_history:
@@ -99,46 +110,86 @@ async def process_single_conversation(
         )
 
         try:
-            # agent.chat yields Union[SentenceOutput, Dict[str, Any]]
-            tts_manager.mark_llm_started()
-            agent_output_stream = context.agent_engine.chat(batch_input)
+            context.active_memory_command_turn_id = turn_id
+            memory_result = await context.handle_explicit_memory_command(
+                input_text,
+                metadata=metadata,
+            )
+            if memory_result.handled:
+                await websocket_send(
+                    json.dumps(
+                        memory_result.to_websocket_payload(),
+                        ensure_ascii=False,
+                    )
+                )
+                feedback_text = memory_result.feedback_text or (
+                    "这次记忆操作没有成功。"
+                )
+                response_part = await process_agent_output(
+                    output=_memory_feedback_output(
+                        context,
+                        text=feedback_text,
+                        expression=memory_result.expression,
+                    ),
+                    character_config=context.character_config,
+                    live2d_model=context.live2d_model,
+                    tts_engine=context.tts_engine,
+                    websocket_send=websocket_send,
+                    tts_manager=tts_manager,
+                    # Fixed command feedback must not trigger translation or a
+                    # network request before being spoken.
+                    translate_engine=None,
+                )
+                full_response += str(response_part or "")
+            else:
+                if context.active_memory_command_turn_id == turn_id:
+                    context.active_memory_command_turn_id = None
+                batch_input = create_batch_input(
+                    input_text=input_text,
+                    images=images,
+                    from_name=context.character_config.human_name,
+                    metadata=metadata,
+                )
+                # agent.chat yields Union[SentenceOutput, Dict[str, Any]]
+                tts_manager.mark_llm_started()
+                agent_output_stream = context.agent_engine.chat(batch_input)
 
-            async for output_item in agent_output_stream:
-                if (
-                    isinstance(output_item, dict)
-                    and output_item.get("type") == "tool_call_status"
-                ):
-                    # Handle tool status event: send WebSocket message
-                    output_item["name"] = context.character_config.character_name
-                    logger.debug(
-                        "Sending tool status update: type={} status={}",
-                        output_item.get("type"),
-                        output_item.get("status"),
-                    )
+                async for output_item in agent_output_stream:
+                    if (
+                        isinstance(output_item, dict)
+                        and output_item.get("type") == "tool_call_status"
+                    ):
+                        # Handle tool status event: send WebSocket message
+                        output_item["name"] = context.character_config.character_name
+                        logger.debug(
+                            "Sending tool status update: type={} status={}",
+                            output_item.get("type"),
+                            output_item.get("status"),
+                        )
 
-                    await websocket_send(json.dumps(output_item))
+                        await websocket_send(json.dumps(output_item))
 
-                elif isinstance(output_item, (SentenceOutput, AudioOutput)):
-                    # Handle SentenceOutput or AudioOutput
-                    response_part = await process_agent_output(
-                        output=output_item,
-                        character_config=context.character_config,
-                        live2d_model=context.live2d_model,
-                        tts_engine=context.tts_engine,
-                        websocket_send=websocket_send,  # Pass websocket_send for audio/tts messages
-                        tts_manager=tts_manager,
-                        translate_engine=context.translate_engine,
-                    )
-                    # Ensure response_part is treated as a string before concatenation
-                    response_part_str = (
-                        str(response_part) if response_part is not None else ""
-                    )
-                    full_response += response_part_str  # Accumulate text response
-                else:
-                    logger.warning(
-                        f"Received unexpected item type from agent chat stream: {type(output_item)}"
-                    )
-                    logger.debug("Unexpected item content omitted from logs")
+                    elif isinstance(output_item, (SentenceOutput, AudioOutput)):
+                        # Handle SentenceOutput or AudioOutput
+                        response_part = await process_agent_output(
+                            output=output_item,
+                            character_config=context.character_config,
+                            live2d_model=context.live2d_model,
+                            tts_engine=context.tts_engine,
+                            websocket_send=websocket_send,
+                            tts_manager=tts_manager,
+                            translate_engine=context.translate_engine,
+                        )
+                        response_part_str = (
+                            str(response_part) if response_part is not None else ""
+                        )
+                        full_response += response_part_str
+                    else:
+                        logger.warning(
+                            "Received unexpected item type from agent chat stream: {}",
+                            type(output_item),
+                        )
+                        logger.debug("Unexpected item content omitted from logs")
 
         except Exception as e:
             logger.exception(
@@ -189,4 +240,6 @@ async def process_single_conversation(
         )
         raise
     finally:
+        if context.active_memory_command_turn_id == turn_id:
+            context.active_memory_command_turn_id = None
         cleanup_conversation(tts_manager, session_emoji)

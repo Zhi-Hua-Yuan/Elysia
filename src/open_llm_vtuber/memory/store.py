@@ -8,12 +8,20 @@ import tempfile
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .types import MemoryDocument, MemoryScope
 
 
 MAX_MEMORY_FILE_BYTES = 256 * 1024
+
+
+class MemoryBackupMode(str, Enum):
+    """Choose whether backup retains the old or sanitized replacement document."""
+
+    PREVIOUS = "previous"
+    REPLACEMENT = "replacement"
 
 
 class MemoryStoreError(Exception):
@@ -102,6 +110,7 @@ class PersistentMemoryStore:
         document: MemoryDocument,
         *,
         expected_revision: int,
+        backup_mode: MemoryBackupMode = MemoryBackupMode.PREVIOUS,
     ) -> MemoryDocument:
         """Atomically replace a document using revision compare-and-swap."""
         return await asyncio.to_thread(
@@ -109,6 +118,7 @@ class PersistentMemoryStore:
             scope,
             document,
             expected_revision,
+            backup_mode,
         )
 
     def _resolve_storage_root(self, storage_dir: str) -> Path:
@@ -247,9 +257,15 @@ class PersistentMemoryStore:
         scope: MemoryScope,
         document: MemoryDocument,
         expected_revision: int,
+        backup_mode: MemoryBackupMode,
     ) -> MemoryDocument:
         with self._get_scope_lock(scope):
-            return self._save_locked(scope, document, expected_revision)
+            return self._save_locked(
+                scope,
+                document,
+                expected_revision,
+                backup_mode,
+            )
 
     def _validate_revision(
         self,
@@ -332,13 +348,17 @@ class PersistentMemoryStore:
         scope: MemoryScope,
         document: MemoryDocument,
         expected_revision: int,
+        backup_mode: MemoryBackupMode,
     ) -> MemoryDocument:
         main_temporary_path: Path | None = None
         backup_temporary_path: Path | None = None
+        rollback_backup_temporary_path: Path | None = None
         try:
             validated_document = MemoryDocument.model_validate(
                 document.model_dump(mode="python")
             )
+            if not isinstance(backup_mode, MemoryBackupMode):
+                raise TypeError("backup_mode must be a MemoryBackupMode")
             self._validate_scope(scope, validated_document)
 
             current_document = self._load_locked(scope)
@@ -365,7 +385,17 @@ class PersistentMemoryStore:
                 validated_document,
             )
             if target.exists():
+                backup_document = (
+                    current_document
+                    if backup_mode == MemoryBackupMode.PREVIOUS
+                    else validated_document
+                )
                 backup_temporary_path, _ = self._prepare_validated_temp(
+                    backup,
+                    scope,
+                    backup_document,
+                )
+                rollback_backup_temporary_path, _ = self._prepare_validated_temp(
                     backup,
                     scope,
                     current_document,
@@ -373,7 +403,13 @@ class PersistentMemoryStore:
                 os.replace(backup_temporary_path, backup)
                 backup_temporary_path = None
 
-            os.replace(main_temporary_path, target)
+            try:
+                os.replace(main_temporary_path, target)
+            except Exception:
+                if rollback_backup_temporary_path is not None:
+                    os.replace(rollback_backup_temporary_path, backup)
+                    rollback_backup_temporary_path = None
+                raise
             main_temporary_path = None
             return persisted_document
         except MemoryStoreError:
@@ -386,6 +422,7 @@ class PersistentMemoryStore:
             self._cleanup_temporary_files(
                 main_temporary_path,
                 backup_temporary_path,
+                rollback_backup_temporary_path,
             )
 
     def _recover_from_backup_locked(
