@@ -44,6 +44,7 @@ from .memory import (
     MemoryManagementController,
     MemoryManagementRequest,
     MemoryManagementResponse,
+    MemorySettingUpdatePort,
     MemoryContextRenderer,
     MemoryCommandExecutionResult,
     MemoryOperationStatus,
@@ -85,6 +86,7 @@ class ServiceContext:
         self.tool_executor: ToolExecutor | None = None
         self.memory_service: PersistentMemoryService | None = None
         self.memory_command_controller = ExplicitMemoryCommandController()
+        self._memory_setting_update_port: MemorySettingUpdatePort | None = None
         self.memory_management_controller = MemoryManagementController()
         self.active_memory_command_turn_id: str | None = None
 
@@ -156,6 +158,22 @@ class ServiceContext:
     def clear_memory_setting_transients(self) -> None:
         """Clear pending confirmations while preserving any in-flight turn marker."""
         self.memory_command_controller.clear_pending()
+
+    def bind_memory_setting_update_port(
+        self,
+        port: MemorySettingUpdatePort,
+    ) -> None:
+        """Bind the process-level memory-setting port before serving requests."""
+        if port is None:
+            raise ValueError("memory setting update port must not be None")
+        if self._memory_setting_update_port is port:
+            return
+        if self._memory_setting_update_port is not None:
+            raise RuntimeError("memory setting update port is already bound")
+
+        controller = MemoryManagementController(setting_update_port=port)
+        self.memory_management_controller = controller
+        self._memory_setting_update_port = port
 
     async def handle_memory_management_request(
         self,

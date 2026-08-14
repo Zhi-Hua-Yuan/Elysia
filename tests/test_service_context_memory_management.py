@@ -4,17 +4,37 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
+import pytest
+
 from open_llm_vtuber.config_manager import MemoryConfig
 from open_llm_vtuber.memory import (
     MemoryCategory,
     MemoryManagementContext,
+    MemoryManagementReasonCode,
     MemoryManagementResultResponse,
     MemoryManagementStatus,
+    MemorySettingUpdateOutcome,
+    MemorySettingUpdateRequest,
     MemoryStateRequest,
     MemoryUpsertRequest,
     PersistentMemoryService,
 )
 from open_llm_vtuber.service_context import ServiceContext
+
+
+class RecordingMemorySettingUpdatePort:
+    def __init__(self, outcome: MemorySettingUpdateOutcome) -> None:
+        self.outcome = outcome
+        self.calls: list[tuple[bool, bool]] = []
+
+    async def update_enabled(
+        self,
+        *,
+        expected_enabled: bool,
+        enabled: bool,
+    ) -> MemorySettingUpdateOutcome:
+        self.calls.append((expected_enabled, enabled))
+        return self.outcome
 
 
 def make_context(tmp_path: Path, *, enabled: bool = True) -> ServiceContext:
@@ -121,3 +141,116 @@ def test_disabled_context_keeps_management_service_without_enabling_conversation
 
     assert isinstance(context.memory_service, PersistentMemoryService)
     assert not context.memory_service.store.storage_root.exists()
+
+
+def test_bind_memory_setting_update_port_routes_updates_without_side_effects(
+    tmp_path: Path,
+) -> None:
+    context = make_context(tmp_path)
+    original_service = context.memory_service
+    original_command_controller = context.memory_command_controller
+    port = RecordingMemorySettingUpdatePort(
+        MemorySettingUpdateOutcome(
+            status=MemoryManagementStatus.SUCCESS,
+            changed=True,
+            enabled=False,
+        )
+    )
+
+    context.bind_memory_setting_update_port(port)
+    response = asyncio.run(
+        context.handle_memory_management_request(
+            MemorySettingUpdateRequest(
+                protocol_version=1,
+                request_id=uuid4(),
+                expected_enabled=True,
+                enabled=False,
+            ),
+            is_local_connection=True,
+        )
+    )
+
+    assert port.calls == [(True, False)]
+    assert response.status == MemoryManagementStatus.SUCCESS
+    assert response.changed is True
+    assert response.enabled is False
+    assert context.config.memory_config.enabled is True
+    assert context.memory_service is original_service
+    assert context.memory_command_controller is original_command_controller
+
+
+def test_bind_memory_setting_update_port_is_idempotent_for_same_instance(
+    tmp_path: Path,
+) -> None:
+    context = make_context(tmp_path)
+    port = RecordingMemorySettingUpdatePort(
+        MemorySettingUpdateOutcome(
+            status=MemoryManagementStatus.SUCCESS,
+            changed=False,
+            enabled=True,
+        )
+    )
+
+    context.bind_memory_setting_update_port(port)
+    bound_controller = context.memory_management_controller
+    context.bind_memory_setting_update_port(port)
+
+    assert context.memory_management_controller is bound_controller
+
+
+def test_bind_memory_setting_update_port_rejects_rebinding(
+    tmp_path: Path,
+) -> None:
+    context = make_context(tmp_path)
+    outcome = MemorySettingUpdateOutcome(
+        status=MemoryManagementStatus.SUCCESS,
+        changed=False,
+        enabled=True,
+    )
+    original_port = RecordingMemorySettingUpdatePort(outcome)
+    replacement_port = RecordingMemorySettingUpdatePort(outcome)
+    context.bind_memory_setting_update_port(original_port)
+    bound_controller = context.memory_management_controller
+
+    with pytest.raises(
+        RuntimeError,
+        match="memory setting update port is already bound",
+    ):
+        context.bind_memory_setting_update_port(replacement_port)
+
+    assert context.memory_management_controller is bound_controller
+
+
+def test_bind_memory_setting_update_port_rejects_none(tmp_path: Path) -> None:
+    context = make_context(tmp_path)
+    original_controller = context.memory_management_controller
+
+    with pytest.raises(
+        ValueError,
+        match="memory setting update port must not be None",
+    ):
+        context.bind_memory_setting_update_port(None)  # type: ignore[arg-type]
+
+    assert context.memory_management_controller is original_controller
+
+
+def test_unbound_memory_setting_update_port_fails_closed(tmp_path: Path) -> None:
+    context = make_context(tmp_path)
+
+    response = asyncio.run(
+        context.handle_memory_management_request(
+            MemorySettingUpdateRequest(
+                protocol_version=1,
+                request_id=uuid4(),
+                expected_enabled=True,
+                enabled=False,
+            ),
+            is_local_connection=True,
+        )
+    )
+
+    assert response.status == MemoryManagementStatus.FAILED
+    assert response.reason_code == MemoryManagementReasonCode.CONFIG_PERSIST_FAILURE
+    assert response.changed is False
+    assert response.enabled is True
+    assert context.config.memory_config.enabled is True
