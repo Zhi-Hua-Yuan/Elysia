@@ -107,6 +107,7 @@ from .management_transport import (
     parse_memory_management_payload,
     serialize_memory_management_response,
 )
+from .setting_persistence import AtomicConfigWriteResult, AtomicMemoryConfigWriter
 
 __all__ = [
     "MemoryAction",
@@ -193,4 +194,6 @@ __all__ = [
     "is_memory_management_request_type",
     "parse_memory_management_payload",
     "serialize_memory_management_response",
+    "AtomicConfigWriteResult",
+    "AtomicMemoryConfigWriter",
 ]
