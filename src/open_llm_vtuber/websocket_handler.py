@@ -29,6 +29,14 @@ from .conversations.conversation_handler import (
     handle_group_interrupt,
     handle_individual_interrupt,
 )
+from .memory import (
+    MEMORY_MANAGEMENT_REQUEST_TYPES,
+    MemoryManagementReasonCode,
+    build_memory_management_error_response,
+    is_loopback_address,
+    parse_memory_management_payload,
+    serialize_memory_management_response,
+)
 
 
 class MessageType(Enum):
@@ -45,6 +53,7 @@ class MessageType(Enum):
     CONFIG = ["fetch-configs", "switch-config"]
     CONTROL = ["interrupt-signal", "audio-play-start"]
     DATA = ["mic-audio-data"]
+    MEMORY_MANAGEMENT = sorted(MEMORY_MANAGEMENT_REQUEST_TYPES)
 
 
 class WSMessage(TypedDict, total=False):
@@ -78,7 +87,7 @@ class WebSocketHandler:
 
     def _init_message_handlers(self) -> Dict[str, Callable]:
         """Initialize message type to handler mapping"""
-        return {
+        handlers = {
             "add-client-to-group": self._handle_group_operation,
             "remove-client-from-group": self._handle_group_operation,
             "request-group-info": self._handle_group_info,
@@ -99,6 +108,13 @@ class WebSocketHandler:
             "request-init-config": self._handle_init_config_request,
             "heartbeat": self._handle_heartbeat,
         }
+        handlers.update(
+            {
+                message_type: self._handle_memory_management_request
+                for message_type in MEMORY_MANAGEMENT_REQUEST_TYPES
+            }
+        )
+        return handlers
 
     async def handle_new_connection(
         self, websocket: WebSocket, client_uid: str
@@ -280,6 +296,79 @@ class WebSocketHandler:
             client_connections=self.client_connections,
             send_group_update=self.send_group_update,
         )
+
+    async def _handle_memory_management_request(
+        self,
+        websocket: WebSocket,
+        client_uid: str,
+        data: dict,
+    ) -> None:
+        """Parse and execute one local memory-management request safely."""
+
+        message_type = data.get("type")
+        response = None
+        request_id = None
+        try:
+            parsed = parse_memory_management_payload(data)
+            if parsed.error_response is not None:
+                logger.warning(
+                    "Rejected invalid memory management request "
+                    "(message_type={}, reason_code={})",
+                    message_type,
+                    parsed.error_response.reason_code.value,
+                )
+                response = parsed.error_response
+            else:
+                request = parsed.request
+                if request is None:  # pragma: no cover - protected by parse outcome
+                    raise RuntimeError("missing parsed management request")
+                request_id = request.request_id
+                context = self.client_contexts.get(client_uid)
+                if context is None:
+                    response = build_memory_management_error_response(
+                        message_type=message_type,
+                        request_id=request_id,
+                        reason_code=MemoryManagementReasonCode.INTERNAL_ERROR,
+                    )
+                else:
+                    peer = getattr(websocket, "client", None)
+                    is_local_connection = is_loopback_address(
+                        getattr(peer, "host", None)
+                    )
+                    group = self.chat_group_manager.get_client_group(client_uid)
+                    group_active = bool(
+                        group is not None and len(getattr(group, "members", ())) > 1
+                    )
+                    response = await context.handle_memory_management_request(
+                        request,
+                        is_local_connection=is_local_connection,
+                        group_active=group_active,
+                    )
+        except Exception as exc:
+            logger.warning(
+                "Memory management WebSocket request failed safely "
+                "(message_type={}, error_type={})",
+                message_type,
+                type(exc).__name__,
+            )
+            response = build_memory_management_error_response(
+                message_type=message_type,
+                request_id=request_id,
+                reason_code=MemoryManagementReasonCode.INTERNAL_ERROR,
+            )
+
+        serialized = serialize_memory_management_response(response)
+        try:
+            await websocket.send_text(serialized)
+        except WebSocketDisconnect:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "Failed to send memory management response "
+                "(message_type={}, error_type={})",
+                message_type,
+                type(exc).__name__,
+            )
 
     async def handle_disconnect(self, client_uid: str) -> None:
         """Handle client disconnection"""

@@ -98,6 +98,15 @@ from .management_controller import (
     MemoryManagementController,
     is_memory_management_mutation_request,
 )
+from .management_transport import (
+    MEMORY_MANAGEMENT_REQUEST_TYPES,
+    MemoryManagementParseOutcome,
+    build_memory_management_error_response,
+    is_loopback_address,
+    is_memory_management_request_type,
+    parse_memory_management_payload,
+    serialize_memory_management_response,
+)
 
 __all__ = [
     "MemoryAction",
@@ -177,4 +186,11 @@ __all__ = [
     "MemorySettingUpdatePort",
     "MemoryManagementController",
     "is_memory_management_mutation_request",
+    "MEMORY_MANAGEMENT_REQUEST_TYPES",
+    "MemoryManagementParseOutcome",
+    "build_memory_management_error_response",
+    "is_loopback_address",
+    "is_memory_management_request_type",
+    "parse_memory_management_payload",
+    "serialize_memory_management_response",
 ]
