@@ -89,6 +89,15 @@ from .management_types import (
     MemoryUpdateRequest,
     MemoryUpsertRequest,
 )
+from .management_context import (
+    MemoryManagementContext,
+    MemorySettingUpdateOutcome,
+    MemorySettingUpdatePort,
+)
+from .management_controller import (
+    MemoryManagementController,
+    is_memory_management_mutation_request,
+)
 
 __all__ = [
     "MemoryAction",
@@ -163,4 +172,9 @@ __all__ = [
     "MemoryStateResponse",
     "MemoryUpdateRequest",
     "MemoryUpsertRequest",
+    "MemoryManagementContext",
+    "MemorySettingUpdateOutcome",
+    "MemorySettingUpdatePort",
+    "MemoryManagementController",
+    "is_memory_management_mutation_request",
 ]

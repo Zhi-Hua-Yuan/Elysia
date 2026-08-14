@@ -40,6 +40,10 @@ from .config_manager import (
 )
 from .memory import (
     ExplicitMemoryCommandController,
+    MemoryManagementContext,
+    MemoryManagementController,
+    MemoryManagementRequest,
+    MemoryManagementResponse,
     MemoryContextRenderer,
     MemoryCommandExecutionResult,
     MemoryOperationStatus,
@@ -48,6 +52,7 @@ from .memory import (
     PersistentMemoryService,
     PersistentMemoryStore,
     feedback_for_reason,
+    is_memory_management_mutation_request,
 )
 
 
@@ -80,6 +85,7 @@ class ServiceContext:
         self.tool_executor: ToolExecutor | None = None
         self.memory_service: PersistentMemoryService | None = None
         self.memory_command_controller = ExplicitMemoryCommandController()
+        self.memory_management_controller = MemoryManagementController()
         self.active_memory_command_turn_id: str | None = None
 
         # the system prompt is a combination of the persona prompt and live2d expression prompt
@@ -110,11 +116,9 @@ class ServiceContext:
     # ==== Initializers
 
     def _init_memory_service(self, memory_config: MemoryConfig) -> None:
-        """Initialize optional memory infrastructure without blocking startup."""
+        """Initialize management infrastructure without enabling conversation use."""
         if not memory_config.enabled:
-            self.memory_service = None
             self.memory_command_controller.clear_pending()
-            return
 
         try:
             candidate_store = PersistentMemoryStore(
@@ -138,6 +142,36 @@ class ServiceContext:
                 "Persistent memory initialization failed (error_type={})",
                 type(exc).__name__,
             )
+
+    async def handle_memory_management_request(
+        self,
+        request: MemoryManagementRequest,
+        *,
+        is_local_connection: bool,
+        group_active: bool = False,
+    ) -> MemoryManagementResponse:
+        """Execute one typed management request without entering conversation flow."""
+        if is_memory_management_mutation_request(request):
+            self.memory_command_controller.clear_pending()
+
+        memory_config = getattr(self.config, "memory_config", None)
+        agent_config = getattr(self.character_config, "agent_config", None)
+        management_context = MemoryManagementContext(
+            is_local_connection=is_local_connection,
+            proxy_enabled=bool(getattr(self.system_config, "enable_proxy", False)),
+            group_active=group_active,
+            agent_choice=getattr(agent_config, "conversation_agent_choice", None),
+            enabled=bool(getattr(memory_config, "enabled", False)),
+            profile_id=getattr(memory_config, "profile_id", None),
+            character_conf_uid=getattr(self.character_config, "conf_uid", None),
+            max_items=getattr(memory_config, "max_items", 0),
+            max_item_chars=getattr(memory_config, "max_item_chars", 0),
+            service=self.memory_service,
+        )
+        return await self.memory_management_controller.handle(
+            request,
+            context=management_context,
+        )
 
     async def _init_mcp_components(self, use_mcpp, enabled_servers):
         """Initializes MCP components based on configuration, dynamically fetching tool info."""

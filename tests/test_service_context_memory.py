@@ -155,19 +155,21 @@ def test_memory_failure_is_desensitized_and_scope_is_disabled(tmp_path: Path) ->
     assert "memory_data" not in output
 
 
-def test_memory_service_initialization_is_opt_in_and_reuses_same_root(
+def test_memory_service_initialization_supports_disabled_management_and_reuses_root(
     tmp_path: Path,
 ) -> None:
     context = ServiceContext(project_root=tmp_path)
 
     context._init_memory_service(MemoryConfig(enabled=False))
-    assert context.memory_service is None
+    disabled_service = context.memory_service
+    assert isinstance(disabled_service, PersistentMemoryService)
     assert not (tmp_path / "memory_data").exists()
 
     config = MemoryConfig(enabled=True, storage_dir="memory_data")
     context._init_memory_service(config)
     service = context.memory_service
     assert isinstance(service, PersistentMemoryService)
+    assert service is disabled_service
     assert service.store.storage_root == (tmp_path / "memory_data").resolve()
     assert not service.store.storage_root.exists()
 
