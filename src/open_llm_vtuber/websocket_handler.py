@@ -32,6 +32,7 @@ from .conversations.conversation_handler import (
 from .memory import (
     MEMORY_MANAGEMENT_REQUEST_TYPES,
     MemoryManagementReasonCode,
+    MemorySettingRuntimeCoordinator,
     build_memory_management_error_response,
     is_loopback_address,
     parse_memory_management_payload,
@@ -79,11 +80,28 @@ class WebSocketHandler:
         self.chat_group_manager = ChatGroupManager()
         self.current_conversation_tasks: Dict[str, Optional[asyncio.Task]] = {}
         self.default_context_cache = default_context_cache
+        self._memory_setting_coordinator: Optional[
+            MemorySettingRuntimeCoordinator
+        ] = None
         self.received_data_buffers: Dict[str, np.ndarray] = {}
         self.conversation_started_at: Dict[str, tuple[float, str, str]] = {}
 
         # Message handlers mapping
         self._message_handlers = self._init_message_handlers()
+
+    def bind_memory_setting_coordinator(
+        self,
+        coordinator: MemorySettingRuntimeCoordinator,
+    ) -> None:
+        """Bind the process-wide coordinator before accepting client sessions."""
+
+        if coordinator is None:
+            raise ValueError("memory setting coordinator must not be None")
+        if self._memory_setting_coordinator is coordinator:
+            return
+        if self._memory_setting_coordinator is not None:
+            raise RuntimeError("memory setting coordinator is already bound")
+        self._memory_setting_coordinator = coordinator
 
     def _init_message_handlers(self) -> Dict[str, Callable]:
         """Initialize message type to handler mapping"""

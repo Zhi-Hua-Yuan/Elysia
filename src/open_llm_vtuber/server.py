@@ -6,6 +6,7 @@ the WebSocket connections, serves static files, and manages the web tool.
 It uses FastAPI for the server and Starlette for static file serving.
 """
 
+import asyncio
 import os
 import shutil
 
@@ -17,6 +18,8 @@ from starlette.staticfiles import StaticFiles as StarletteStaticFiles
 from .routes import init_client_ws_route, init_webtool_routes, init_proxy_route
 from .service_context import ServiceContext
 from .config_manager.utils import Config
+from .memory import AtomicMemoryConfigWriter, MemorySettingRuntimeCoordinator
+from .websocket_handler import WebSocketHandler
 
 
 # Create a custom StaticFiles class that adds CORS headers
@@ -78,6 +81,11 @@ class WebSocketServer:
             default_context_cache or ServiceContext()
         )  # Use provided context or initialize a new empty one waiting to be loaded
         # It will be populated during the initialize method call
+        self.websocket_handler = WebSocketHandler(self.default_context_cache)
+        self.memory_setting_writer: AtomicMemoryConfigWriter | None = None
+        self.memory_setting_coordinator: MemorySettingRuntimeCoordinator | None = None
+        self._memory_setting_runtime_lock: asyncio.Lock | None = None
+        self._memory_setting_runtime_initialized = False
 
         # Add global CORS middleware
         self.app.add_middleware(
@@ -91,7 +99,7 @@ class WebSocketServer:
         # Include routes, passing the context instance
         # The context will be populated during the initialize step
         self.app.include_router(
-            init_client_ws_route(default_context_cache=self.default_context_cache),
+            init_client_ws_route(websocket_handler=self.websocket_handler),
         )
         self.app.include_router(
             init_webtool_routes(default_context_cache=self.default_context_cache),
@@ -148,10 +156,55 @@ class WebSocketServer:
             name="frontend",
         )
 
+        # Assemble loop-bound memory-setting services in Uvicorn's event loop.
+        self.app.add_event_handler(
+            "startup",
+            self.initialize_memory_setting_runtime,
+        )
+
     async def initialize(self):
         """Asynchronously load the service context from config.
         Calling this function is needed if default_context_cache was not provided to the constructor."""
         await self.default_context_cache.load_from_config(self.config)
+
+    async def initialize_memory_setting_runtime(self) -> None:
+        """Assemble the process-wide memory-setting runtime exactly once."""
+
+        if self._memory_setting_runtime_lock is None:
+            self._memory_setting_runtime_lock = asyncio.Lock()
+
+        async with self._memory_setting_runtime_lock:
+            if self._memory_setting_runtime_initialized:
+                return
+
+            config = self.default_context_cache.config
+            if config is None:
+                raise RuntimeError(
+                    "default service context must be loaded before memory runtime setup"
+                )
+
+            memory_config = getattr(config, "memory_config", None)
+            if memory_config is None:
+                raise RuntimeError("memory configuration is unavailable")
+            initial_enabled = memory_config.enabled
+            if type(initial_enabled) is not bool:
+                raise TypeError("memory enabled state must be a boolean")
+
+            if self.memory_setting_writer is None:
+                self.memory_setting_writer = AtomicMemoryConfigWriter(
+                    project_root=self.default_context_cache.project_root,
+                )
+            if self.memory_setting_coordinator is None:
+                self.memory_setting_coordinator = MemorySettingRuntimeCoordinator(
+                    writer=self.memory_setting_writer,
+                    initial_enabled=initial_enabled,
+                )
+
+            coordinator = self.memory_setting_coordinator
+            self.default_context_cache.bind_memory_setting_update_port(coordinator)
+            await coordinator.register_target(self.default_context_cache)
+            self.websocket_handler.bind_memory_setting_coordinator(coordinator)
+            self._memory_setting_runtime_initialized = True
 
     @staticmethod
     def clean_cache():
