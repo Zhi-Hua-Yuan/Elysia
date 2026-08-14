@@ -101,6 +101,7 @@ class MemoryReasonCode(str, Enum):
     SENSITIVE_CONTENT = "sensitive_content"
     CAPACITY_REACHED = "capacity_reached"
     NOT_FOUND = "not_found"
+    DUPLICATE_ITEM = "duplicate_item"
     AMBIGUOUS_MATCH = "ambiguous_match"
     REVISION_CONFLICT = "revision_conflict"
     STORAGE_FAILURE = "storage_failure"

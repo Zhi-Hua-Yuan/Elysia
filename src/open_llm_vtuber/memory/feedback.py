@@ -27,6 +27,7 @@ _REASON_FEEDBACK = {
     ),
     MemoryReasonCode.CAPACITY_REACHED: "记忆已经满了，请先删除一条。",
     MemoryReasonCode.NOT_FOUND: "我没有找到对应的记忆。",
+    MemoryReasonCode.DUPLICATE_ITEM: "已经存在相同的记忆，请先查看已有内容。",
     MemoryReasonCode.AMBIGUOUS_MATCH: ("找到了多条可能的记忆，请说得更具体一些。"),
     MemoryReasonCode.REVISION_CONFLICT: ("记忆内容已经发生变化，请重新发起操作。"),
     MemoryReasonCode.STORAGE_FAILURE: "这次记忆操作没有成功。",
