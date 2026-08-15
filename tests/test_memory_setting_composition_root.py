@@ -104,7 +104,9 @@ def test_server_owns_handler_and_registers_startup_composition(tmp_path) -> None
     )
 
 
-def test_runtime_composition_is_singleton_idempotent_and_does_not_write(tmp_path) -> None:
+def test_runtime_composition_is_singleton_idempotent_and_does_not_write(
+    tmp_path,
+) -> None:
     config_path = tmp_path / "conf.yaml"
     original_content = "memory_config:\n  enabled: true\n"
     config_path.write_text(original_content, encoding="utf-8")
