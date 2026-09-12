@@ -47,7 +47,7 @@ English README | [中文README](https://github.com/t41372/Open-LLM-VTuber/blob/m
 
 You can treat it as your personal AI companion — whether you want a `virtual girlfriend`, `boyfriend`, `cute pet`, or any other character, it can meet your expectations. The project fully supports `Windows`, `macOS`, and `Linux`, and offers two usage modes: web version and desktop client (with special support for **transparent background desktop pet mode**, allowing the AI companion to accompany you anywhere on your screen).
 
-Although the long-term memory feature is temporarily removed (coming back soon), thanks to the persistent storage of chat logs, you can always continue your previous unfinished conversations without losing any precious interactive moments.
+This Elysia development branch includes an opt-in lightweight persistent-memory layer in addition to chat-history storage. It keeps a small set of explicitly authorized user facts in local plaintext JSON, supports explicit voice/text commands and a WebSocket management API, and remains disabled by default. Automatic extraction and semantic/vector memory are intentionally out of scope.
 
 In terms of backend support, we have integrated a rich variety of LLM inference, text-to-speech, and speech recognition solutions. If you want to customize your AI companion, you can refer to the [Character Customization Guide](https://open-llm-vtuber.github.io/docs/user-guide/live2d) to customize your AI companion's appearance and persona.
 

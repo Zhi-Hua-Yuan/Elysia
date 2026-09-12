@@ -11,6 +11,9 @@ For full documentation, please visit our [documentation site](https://open-llm-v
 
 - The frozen M5 lightweight persistent-memory design is maintained in
   [`elysia-m5-lightweight-persistent-memory-design.md`](elysia-m5-lightweight-persistent-memory-design.md).
+- M5.4.3 memory management UI usage, troubleshooting, automated evidence, and
+  pending manual checks are tracked in
+  [`elysia-m5-4-3-memory-ui.md`](elysia-m5-4-3-memory-ui.md).
 
 - The current M3.4 Fish-default software RC setup, smoke test, fallback, and
   troubleshooting guide is maintained in
